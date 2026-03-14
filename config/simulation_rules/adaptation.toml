@@ -14,3 +14,8 @@ base_fatigue_recovery = 0.03
 # Actual gain = adaptation_rate * tactical_understanding_gain.
 # Clamped so tactical_understanding never exceeds 1.0.
 tactical_understanding_gain = 0.04
+
+# How much fatigue reduces the agent_state_factor in match result
+# calculation. factor = avg_form * (1.0 - avg_fatigue * this_weight).
+# Range: 0.0-1.0. Higher = fatigue has more impact on match performance.
+fatigue_penalty_weight = 0.5

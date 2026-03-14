@@ -39,6 +39,7 @@ def _make_config_dir(
             base_fatigue_increase = 0.05
             base_fatigue_recovery = 0.03
             tactical_understanding_gain = 0.04
+            fatigue_penalty_weight = 0.5
         """
     _write_toml(config_dir / "adaptation.toml", adaptation)
 
@@ -104,7 +105,7 @@ class TestSimulationRulesLoad:
         rules = SimulationRules.load(config_dir)
 
         with pytest.raises(AttributeError):
-            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1)  # type: ignore[misc]
+            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1)  # type: ignore[misc]
 
     def test_loads_from_real_config(self) -> None:
         """Verify that the actual config files in the repo are loadable."""
@@ -178,6 +179,7 @@ class TestAdaptationConfigValidation:
                 base_fatigue_increase=-0.01,
                 base_fatigue_recovery=0.03,
                 tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=0.5,
             )
 
     def test_negative_fatigue_recovery(self) -> None:
@@ -186,6 +188,7 @@ class TestAdaptationConfigValidation:
                 base_fatigue_increase=0.05,
                 base_fatigue_recovery=-0.01,
                 tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=0.5,
             )
 
     def test_negative_understanding_gain(self) -> None:
@@ -194,6 +197,7 @@ class TestAdaptationConfigValidation:
                 base_fatigue_increase=0.05,
                 base_fatigue_recovery=0.03,
                 tactical_understanding_gain=-0.01,
+                fatigue_penalty_weight=0.5,
             )
 
     def test_zero_values_are_valid(self) -> None:
@@ -201,8 +205,18 @@ class TestAdaptationConfigValidation:
             base_fatigue_increase=0.0,
             base_fatigue_recovery=0.0,
             tactical_understanding_gain=0.0,
+            fatigue_penalty_weight=0.0,
         )
         assert config.base_fatigue_increase == 0.0
+
+    def test_fatigue_penalty_weight_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="fatigue_penalty_weight"):
+            AdaptationConfig(
+                base_fatigue_increase=0.05,
+                base_fatigue_recovery=0.03,
+                tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=1.5,
+            )
 
 
 class TestPlayerTurningPointValidation:

@@ -38,11 +38,15 @@ class AdaptationConfig:
         tactical_understanding_gain: Base weekly gain in tactical
                                      understanding (before adaptation_rate
                                      scaling).
+        fatigue_penalty_weight:     How much fatigue reduces the
+                                     agent_state_factor in match result
+                                     calculation (0.0-1.0).
     """
 
     base_fatigue_increase: float
     base_fatigue_recovery: float
     tactical_understanding_gain: float
+    fatigue_penalty_weight: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -59,6 +63,11 @@ class AdaptationConfig:
             raise ValueError(
                 f"tactical_understanding_gain must be >= 0, "
                 f"got {self.tactical_understanding_gain}"
+            )
+        if not 0.0 <= self.fatigue_penalty_weight <= 1.0:
+            raise ValueError(
+                f"fatigue_penalty_weight must be in [0.0, 1.0], "
+                f"got {self.fatigue_penalty_weight}"
             )
 
 
@@ -212,6 +221,7 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
         tactical_understanding_gain=float(
             data["tactical_understanding_gain"]
         ),
+        fatigue_penalty_weight=float(data["fatigue_penalty_weight"]),
     )
 
 
