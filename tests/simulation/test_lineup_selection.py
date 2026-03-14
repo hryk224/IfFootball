@@ -33,6 +33,8 @@ def _rules() -> SimulationRules:
             base_fatigue_recovery=0.03,
             tactical_understanding_gain=0.04,
             fatigue_penalty_weight=0.5,
+            trust_increase_on_start=2.0,
+            trust_decrease_on_bench=1.0,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(

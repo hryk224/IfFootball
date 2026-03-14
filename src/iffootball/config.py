@@ -41,12 +41,19 @@ class AdaptationConfig:
         fatigue_penalty_weight:     How much fatigue reduces the
                                      agent_state_factor in match result
                                      calculation (0.0-1.0).
+        trust_increase_on_start:    manager_trust increase when selected
+                                     as starter. **0-100 scale** (matches
+                                     PlayerAgent.manager_trust range).
+        trust_decrease_on_bench:    manager_trust decrease when benched.
+                                     **0-100 scale**.
     """
 
     base_fatigue_increase: float
     base_fatigue_recovery: float
     tactical_understanding_gain: float
     fatigue_penalty_weight: float
+    trust_increase_on_start: float
+    trust_decrease_on_bench: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -68,6 +75,16 @@ class AdaptationConfig:
             raise ValueError(
                 f"fatigue_penalty_weight must be in [0.0, 1.0], "
                 f"got {self.fatigue_penalty_weight}"
+            )
+        if self.trust_increase_on_start < 0:
+            raise ValueError(
+                f"trust_increase_on_start must be >= 0, "
+                f"got {self.trust_increase_on_start}"
+            )
+        if self.trust_decrease_on_bench < 0:
+            raise ValueError(
+                f"trust_decrease_on_bench must be >= 0, "
+                f"got {self.trust_decrease_on_bench}"
             )
 
 
@@ -222,6 +239,8 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
             data["tactical_understanding_gain"]
         ),
         fatigue_penalty_weight=float(data["fatigue_penalty_weight"]),
+        trust_increase_on_start=float(data["trust_increase_on_start"]),
+        trust_decrease_on_bench=float(data["trust_decrease_on_bench"]),
     )
 
 

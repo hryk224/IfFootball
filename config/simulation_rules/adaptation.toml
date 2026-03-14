@@ -19,3 +19,8 @@ tactical_understanding_gain = 0.04
 # calculation. factor = avg_form * (1.0 - avg_fatigue * this_weight).
 # Range: 0.0-1.0. Higher = fatigue has more impact on match performance.
 fatigue_penalty_weight = 0.5
+
+# manager_trust change per week (0-100 scale, matching PlayerAgent.manager_trust).
+# NOTE: These are on the 0-100 attribute scale, not the 0.0-1.0 config default.
+trust_increase_on_start = 2.0
+trust_decrease_on_bench = 1.0
