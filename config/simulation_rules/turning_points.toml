@@ -1,0 +1,31 @@
+# Turning point detection thresholds for the simulation engine.
+#
+# All values are provisional and subject to community review.
+# Rationale will be documented in docs/simulation-rules.md (M4).
+
+[player]
+# Consecutive matches on the bench before a turning point is triggered.
+bench_streak_threshold = 3
+
+# tactical_understanding below this value triggers short-term confusion
+# (only within short_term_window matches after a managerial change).
+# Scale: 0.0-1.0.
+tactical_understanding_low = 0.40
+
+# Number of matches after a new manager appointment during which
+# low tactical_understanding triggers a turning point.
+short_term_window = 4
+
+[manager]
+# job_security below this value causes a shift to defensive tactics.
+# Scale: 0.0-1.0.
+job_security_warning = 0.30
+
+# job_security below this value generates a dismissal event.
+# Scale: 0.0-1.0.
+job_security_critical = 0.10
+
+# style_stubbornness at or above this value prevents tactical shifts
+# even when job_security drops below job_security_warning.
+# Scale: 0-100.
+style_stubbornness_threshold = 80

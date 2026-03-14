@@ -1,0 +1,16 @@
+# Weekly state update parameters for the simulation engine.
+#
+# All values are provisional and subject to community review.
+# Rationale will be documented in docs/simulation-rules.md (M4).
+
+# Fatigue added to each player who played in the match (0.0-1.0 scale).
+base_fatigue_increase = 0.05
+
+# Fatigue recovered by each player who did not play (0.0-1.0 scale).
+# Clamped so fatigue never goes below 0.0.
+base_fatigue_recovery = 0.03
+
+# Weekly gain in tactical_understanding (0.0-1.0 scale).
+# Actual gain = adaptation_rate * tactical_understanding_gain.
+# Clamped so tactical_understanding never exceeds 1.0.
+tactical_understanding_gain = 0.04
