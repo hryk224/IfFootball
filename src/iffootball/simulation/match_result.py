@@ -102,14 +102,16 @@ def simulate_match(
     """Simulate a single match and return the result.
 
     Expected goals are computed from team/opponent baselines scaled by the
-    agent state factor, then sampled via Poisson distribution.
+    agent state factor, then adjusted for home advantage and sampled via
+    Poisson distribution.
 
     Args:
         team:       Simulated team's baseline metrics.
         opponent:   Opponent's strength snapshot at trigger point.
         starters:   Starting XI of the simulated team.
         fixture:    Fixture being played (provides is_home).
-        adaptation: Adaptation config (provides fatigue_penalty_weight).
+        adaptation: Adaptation config (provides fatigue_penalty_weight
+                    and home_advantage_factor).
         rng:        Seeded random generator for reproducibility.
 
     Returns:
@@ -123,6 +125,12 @@ def simulate_match(
         team.xg_for_per90 * opponent.xg_against_per90 * state_factor
     )
     expected_against = opponent.xg_for_per90 * team.xg_against_per90
+
+    # Home advantage: boost expected goals for the home side.
+    if fixture.is_home:
+        expected_for *= adaptation.home_advantage_factor
+    else:
+        expected_against *= adaptation.home_advantage_factor
 
     # Poisson lambda must be non-negative.
     goals_for = int(rng.poisson(max(expected_for, 0.0)))

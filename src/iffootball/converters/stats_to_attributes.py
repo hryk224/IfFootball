@@ -2,9 +2,15 @@
 
 Pipeline:
   1. calc_minutes_played()      — minutes per player from match events
-  2. aggregate_player_stats()   — per-90 metrics per player
+  2. aggregate_player_stats()   — per-90 metrics + xG variance per player
   3. normalize_percentile()     — rank within >=900-min cohort (0–100 scale)
+                                  + consistency from inverted xG std percentile
   4. build_player_agents()      — assemble PlayerAgent list
+
+Consistency derivation (M2):
+  Per-match xG involvement is aggregated and its standard deviation computed.
+  Low std = high consistency: consistency = 100 - std_percentile.
+  Players with fewer than _MIN_MATCHES_FOR_CONSISTENCY matches keep 50.0.
 
 Position mapping:
   StatsBomb position_name -> RoleFamily -> BroadPosition
@@ -107,6 +113,10 @@ def to_broad_position(role_family: RoleFamily) -> BroadPosition:
 _MINUTES_PER_MATCH = 90.0
 _MIN_MINUTES_THRESHOLD = 900.0
 
+# Minimum matches with xG data to compute consistency from variance.
+# Players below this threshold keep the neutral 50.0 placeholder.
+_MIN_MATCHES_FOR_CONSISTENCY = 5
+
 
 def calc_minutes_played(events: pd.DataFrame) -> pd.Series:
     """Calculate total minutes played per player from match events.
@@ -137,6 +147,8 @@ def aggregate_player_stats(events: pd.DataFrame) -> pd.DataFrame:
       - pressures_per90: count of Pressure events / (minutes / 90)
       - tackles_per90:   count of Tackle events / (minutes / 90)
       - passes_per90:    count of Pass events / (minutes / 90)
+      - xg_std:          std of per-match xG involvement (for consistency)
+      - xg_match_count:  number of matches with xG data (for consistency filter)
 
     Only players with at least 1 minute recorded are included.
 
@@ -155,6 +167,15 @@ def aggregate_player_stats(events: pd.DataFrame) -> pd.DataFrame:
         .groupby("player_id")["shot_statsbomb_xg"]
         .sum()
     )
+
+    # Per-match xG for consistency calculation.
+    xg_per_match = (
+        shots.dropna(subset=["player_id", "shot_statsbomb_xg"])
+        .groupby(["player_id", "match_id"])["shot_statsbomb_xg"]
+        .sum()
+    )
+    xg_std = xg_per_match.groupby("player_id").std(ddof=0).fillna(0.0)
+    xg_match_count = xg_per_match.groupby("player_id").size()
 
     pressures = (
         events[events["type"] == "Pressure"]
@@ -187,6 +208,8 @@ def aggregate_player_stats(events: pd.DataFrame) -> pd.DataFrame:
             "pressures_per90": _per90(pressures, minutes),
             "tackles_per90": _per90(tackles, minutes),
             "passes_per90": _per90(passes, minutes),
+            "xg_std": xg_std.reindex(minutes.index, fill_value=0.0),
+            "xg_match_count": xg_match_count.reindex(minutes.index, fill_value=0),
         }
     )
 
@@ -202,17 +225,39 @@ def normalize_percentile(
 
     Percentile values are scaled to 0–100.
 
+    Consistency is derived from xg_std: low std = high consistency.
+    Players with fewer than _MIN_MATCHES_FOR_CONSISTENCY matches with
+    xG data keep the neutral 50.0 placeholder.
+    consistency = 100 - std_percentile (inverted: low variance = high score).
+
     Args:
-        stats: DataFrame from aggregate_player_stats() with a 'minutes' column.
+        stats: DataFrame from aggregate_player_stats() with 'minutes',
+               'xg_std', and 'xg_match_count' columns.
         min_minutes: Minimum minutes to be included in the cohort (default 900).
 
     Returns:
-        DataFrame with the same columns as stats but values replaced by
-        percentile scores (0–100), limited to qualified players.
+        DataFrame with percentile scores (0–100) plus a 'consistency'
+        column, limited to qualified players.
     """
     qualified = stats[stats["minutes"] >= min_minutes].copy()
-    metric_cols = [c for c in qualified.columns if c != "minutes"]
+
+    # Standard percentile columns (exclude helper columns).
+    metric_cols = [
+        c
+        for c in qualified.columns
+        if c not in ("minutes", "xg_std", "xg_match_count", "consistency")
+    ]
     qualified[metric_cols] = qualified[metric_cols].rank(pct=True) * 100
+
+    # Consistency: inverted xg_std percentile for players with enough matches.
+    if "xg_std" in qualified.columns and "xg_match_count" in qualified.columns:
+        std_percentile = qualified["xg_std"].rank(pct=True) * 100
+        consistency = 100.0 - std_percentile
+        has_enough = qualified["xg_match_count"] >= _MIN_MATCHES_FOR_CONSISTENCY
+        qualified["consistency"] = consistency.where(has_enough, 50.0)
+    else:
+        qualified["consistency"] = 50.0
+
     return qualified
 
 
@@ -223,14 +268,15 @@ def normalize_percentile(
 def _map_technical_attributes(row: pd.Series) -> dict[str, float]:
     """Map normalised per-90 metrics to PlayerAgent technical attribute names.
 
-    This mapping reflects M1 design intent:
+    This mapping reflects M2 design:
       - pace:        not derivable from event data; set to neutral 50.0
       - passing:     passes_per90 percentile
       - shooting:    xg_per90 percentile
       - pressing:    pressures_per90 percentile
       - defending:   tackles_per90 percentile
       - physicality: not derivable from event data; set to neutral 50.0
-      - consistency: not derivable from event data; set to neutral 50.0
+      - consistency: derived from xG variance (100 - std_percentile).
+                     Players with too few matches get 50.0 placeholder.
     """
     return {
         "pace": 50.0,
@@ -239,7 +285,7 @@ def _map_technical_attributes(row: pd.Series) -> dict[str, float]:
         "pressing": float(row.get("pressures_per90", 50.0)),
         "defending": float(row.get("tackles_per90", 50.0)),
         "physicality": 50.0,
-        "consistency": 50.0,
+        "consistency": float(row.get("consistency", 50.0)),
     }
 
 

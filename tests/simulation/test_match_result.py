@@ -27,6 +27,7 @@ _DEFAULT_ADAPTATION = AdaptationConfig(
     fatigue_penalty_weight=0.5,
     trust_increase_on_start=2.0,
     trust_decrease_on_bench=1.0,
+    home_advantage_factor=1.1,
 )
 
 

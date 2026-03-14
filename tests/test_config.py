@@ -42,6 +42,7 @@ def _make_config_dir(
             fatigue_penalty_weight = 0.5
             trust_increase_on_start = 2.0
             trust_decrease_on_bench = 1.0
+            home_advantage_factor = 1.1
         """
     _write_toml(config_dir / "adaptation.toml", adaptation)
 
@@ -108,7 +109,7 @@ class TestSimulationRulesLoad:
         rules = SimulationRules.load(config_dir)
 
         with pytest.raises(AttributeError):
-            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1)  # type: ignore[misc]
+            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.1)  # type: ignore[misc]
 
     def test_loads_from_real_config(self) -> None:
         """Verify that the actual config files in the repo are loadable."""
@@ -186,6 +187,7 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=2.0,
                 trust_decrease_on_bench=1.0,
+                home_advantage_factor=1.1,
             )
 
     def test_negative_fatigue_recovery(self) -> None:
@@ -197,6 +199,7 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=2.0,
                 trust_decrease_on_bench=1.0,
+                home_advantage_factor=1.1,
             )
 
     def test_negative_understanding_gain(self) -> None:
@@ -208,6 +211,7 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=2.0,
                 trust_decrease_on_bench=1.0,
+                home_advantage_factor=1.1,
             )
 
     def test_zero_values_are_valid(self) -> None:
@@ -218,6 +222,7 @@ class TestAdaptationConfigValidation:
             fatigue_penalty_weight=0.0,
             trust_increase_on_start=0.0,
             trust_decrease_on_bench=0.0,
+            home_advantage_factor=1.0,
         )
         assert config.base_fatigue_increase == 0.0
 
@@ -230,6 +235,7 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=1.5,
                 trust_increase_on_start=2.0,
                 trust_decrease_on_bench=1.0,
+                home_advantage_factor=1.1,
             )
 
     def test_negative_trust_increase(self) -> None:
@@ -241,6 +247,7 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=-1.0,
                 trust_decrease_on_bench=1.0,
+                home_advantage_factor=1.1,
             )
 
 

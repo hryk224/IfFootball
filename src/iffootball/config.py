@@ -46,6 +46,11 @@ class AdaptationConfig:
                                      PlayerAgent.manager_trust range).
         trust_decrease_on_bench:    manager_trust decrease when benched.
                                      **0-100 scale**.
+        home_advantage_factor:      Multiplier for expected goals when the
+                                     simulated team plays at home (or for
+                                     the opponent when away). Provisionally
+                                     placed here; semantically belongs to
+                                     match result parameters. Must be > 0.
     """
 
     base_fatigue_increase: float
@@ -54,6 +59,7 @@ class AdaptationConfig:
     fatigue_penalty_weight: float
     trust_increase_on_start: float
     trust_decrease_on_bench: float
+    home_advantage_factor: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -85,6 +91,11 @@ class AdaptationConfig:
             raise ValueError(
                 f"trust_decrease_on_bench must be >= 0, "
                 f"got {self.trust_decrease_on_bench}"
+            )
+        if self.home_advantage_factor <= 0:
+            raise ValueError(
+                f"home_advantage_factor must be > 0, "
+                f"got {self.home_advantage_factor}"
             )
 
 
@@ -250,6 +261,7 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
         fatigue_penalty_weight=float(data["fatigue_penalty_weight"]),
         trust_increase_on_start=float(data["trust_increase_on_start"]),
         trust_decrease_on_bench=float(data["trust_decrease_on_bench"]),
+        home_advantage_factor=float(data["home_advantage_factor"]),
     )
 
 
