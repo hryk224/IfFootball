@@ -23,10 +23,3 @@ fatigue_penalty_weight = 0.5
 # manager_trust change per week (0.0-1.0 scale).
 trust_increase_on_start = 0.02
 trust_decrease_on_bench = 0.01
-
-# Home advantage multiplier for expected goals in match result calculation.
-# When is_home=True, expected_for *= this factor.
-# When is_home=False, expected_against *= this factor (opponent is at home).
-# NOTE: Provisionally placed in adaptation config; semantically belongs to
-# match result parameters. Will be moved if a dedicated match config is created.
-home_advantage_factor = 1.1

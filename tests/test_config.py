@@ -29,6 +29,7 @@ def _make_config_dir(
     tmp_path: Path,
     adaptation: str | None = None,
     turning_points: str | None = None,
+    match: str | None = None,
 ) -> Path:
     """Create a config directory with default or custom TOML files."""
     config_dir = tmp_path / "simulation_rules"
@@ -42,7 +43,6 @@ def _make_config_dir(
             fatigue_penalty_weight = 0.5
             trust_increase_on_start = 0.02
             trust_decrease_on_bench = 0.01
-            home_advantage_factor = 1.1
         """
     _write_toml(config_dir / "adaptation.toml", adaptation)
 
@@ -60,6 +60,12 @@ def _make_config_dir(
             style_stubbornness_threshold = 80
         """
     _write_toml(config_dir / "turning_points.toml", turning_points)
+
+    if match is None:
+        match = """\
+            home_advantage_factor = 1.1
+        """
+    _write_toml(config_dir / "match.toml", match)
 
     return config_dir
 
@@ -109,7 +115,7 @@ class TestSimulationRulesLoad:
         rules = SimulationRules.load(config_dir)
 
         with pytest.raises(AttributeError):
-            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.1)  # type: ignore[misc]
+            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1)  # type: ignore[misc]
 
     def test_loads_from_real_config(self) -> None:
         """Verify that the actual config files in the repo are loadable."""
@@ -144,6 +150,7 @@ class TestSimulationRulesLoadErrors:
             style_stubbornness_threshold = 80
             """,
         )
+        _write_toml(config_dir / "match.toml", "home_advantage_factor = 1.1")
         with pytest.raises(FileNotFoundError):
             SimulationRules.load(config_dir)
 
@@ -171,10 +178,55 @@ class TestSimulationRulesLoadErrors:
         with pytest.raises(KeyError):
             SimulationRules.load(config_dir)
 
+    def test_missing_match_file(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "simulation_rules"
+        config_dir.mkdir()
+        _write_toml(
+            config_dir / "adaptation.toml",
+            """\
+            base_fatigue_increase = 0.05
+            base_fatigue_recovery = 0.03
+            tactical_understanding_gain = 0.04
+            fatigue_penalty_weight = 0.5
+            trust_increase_on_start = 0.02
+            trust_decrease_on_bench = 0.01
+            """,
+        )
+        _write_toml(
+            config_dir / "turning_points.toml",
+            """\
+            [player]
+            bench_streak_threshold = 3
+            tactical_understanding_low = 0.40
+            short_term_window = 4
+            trust_low = 0.40
+            [manager]
+            job_security_warning = 0.30
+            job_security_critical = 0.10
+            style_stubbornness_threshold = 80
+            """,
+        )
+        with pytest.raises(FileNotFoundError):
+            SimulationRules.load(config_dir)
+
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+
+class TestMatchConfigValidation:
+    def test_home_advantage_factor_zero(self) -> None:
+        from iffootball.config import MatchConfig
+
+        with pytest.raises(ValueError, match="home_advantage_factor"):
+            MatchConfig(home_advantage_factor=0.0)
+
+    def test_home_advantage_factor_negative(self) -> None:
+        from iffootball.config import MatchConfig
+
+        with pytest.raises(ValueError, match="home_advantage_factor"):
+            MatchConfig(home_advantage_factor=-0.5)
 
 
 class TestAdaptationConfigValidation:
@@ -187,7 +239,6 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=0.02,
                 trust_decrease_on_bench=0.01,
-                home_advantage_factor=1.1,
             )
 
     def test_negative_fatigue_recovery(self) -> None:
@@ -199,7 +250,6 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=0.02,
                 trust_decrease_on_bench=0.01,
-                home_advantage_factor=1.1,
             )
 
     def test_negative_understanding_gain(self) -> None:
@@ -211,7 +261,6 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=0.02,
                 trust_decrease_on_bench=0.01,
-                home_advantage_factor=1.1,
             )
 
     def test_zero_values_are_valid(self) -> None:
@@ -223,7 +272,6 @@ class TestAdaptationConfigValidation:
             trust_increase_on_start=0.0,
             trust_decrease_on_bench=0.0,
 
-            home_advantage_factor=1.0,
         )
         assert config.base_fatigue_increase == 0.0
 
@@ -236,7 +284,6 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=1.5,
                 trust_increase_on_start=0.02,
                 trust_decrease_on_bench=0.01,
-                home_advantage_factor=1.1,
             )
 
     def test_negative_trust_increase(self) -> None:
@@ -248,7 +295,6 @@ class TestAdaptationConfigValidation:
                 fatigue_penalty_weight=0.5,
                 trust_increase_on_start=-1.0,
                 trust_decrease_on_bench=1.0,
-                home_advantage_factor=1.1,
             )
 
 

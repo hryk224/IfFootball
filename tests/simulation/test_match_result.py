@@ -8,7 +8,7 @@ import pytest
 from iffootball.agents.fixture import Fixture, OpponentStrength
 from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.agents.team import TeamBaseline
-from iffootball.config import AdaptationConfig
+from iffootball.config import AdaptationConfig, MatchConfig
 from iffootball.simulation.match_result import (
     MatchResult,
     calc_agent_state_factor,
@@ -27,8 +27,9 @@ _DEFAULT_ADAPTATION = AdaptationConfig(
     fatigue_penalty_weight=0.5,
     trust_increase_on_start=0.02,
     trust_decrease_on_bench=0.01,
-    home_advantage_factor=1.1,
 )
+
+_DEFAULT_MATCH = MatchConfig(home_advantage_factor=1.1)
 
 
 def _make_player(
@@ -155,6 +156,7 @@ class TestSimulateMatch:
             starters=_make_starters(),
             fixture=_make_fixture(is_home=True),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=rng,
         )
         assert isinstance(result, MatchResult)
@@ -171,6 +173,7 @@ class TestSimulateMatch:
             starters=_make_starters(),
             fixture=_make_fixture(),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=np.random.default_rng(123),
         )
         r2 = simulate_match(
@@ -179,6 +182,7 @@ class TestSimulateMatch:
             starters=_make_starters(),
             fixture=_make_fixture(),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=np.random.default_rng(123),
         )
         assert r1 == r2
@@ -192,6 +196,7 @@ class TestSimulateMatch:
                 starters=_make_starters(),
                 fixture=_make_fixture(),
                 adaptation=_DEFAULT_ADAPTATION,
+                match_config=_DEFAULT_MATCH,
                 rng=np.random.default_rng(seed),
             )
             for seed in range(50)
@@ -231,6 +236,7 @@ class TestSimulateMatch:
                 starters=_make_starters(),
                 fixture=_make_fixture(),
                 adaptation=_DEFAULT_ADAPTATION,
+                match_config=_DEFAULT_MATCH,
                 rng=np.random.default_rng(seed),
             )
             if result.points_earned == 3:
@@ -247,6 +253,7 @@ class TestSimulateMatch:
             starters=_make_starters(),
             fixture=_make_fixture(is_home=True),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=rng,
         )
         assert home_result.is_home is True
@@ -258,6 +265,7 @@ class TestSimulateMatch:
             starters=_make_starters(),
             fixture=_make_fixture(is_home=False),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=rng,
         )
         assert away_result.is_home is False
@@ -275,6 +283,7 @@ class TestSimulateMatch:
             starters=[],
             fixture=_make_fixture(),
             adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
             rng=rng,
         )
         assert isinstance(result, MatchResult)

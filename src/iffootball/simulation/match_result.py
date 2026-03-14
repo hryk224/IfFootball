@@ -35,7 +35,7 @@ import numpy as np
 from iffootball.agents.fixture import Fixture, OpponentStrength
 from iffootball.agents.player import PlayerAgent
 from iffootball.agents.team import TeamBaseline
-from iffootball.config import AdaptationConfig
+from iffootball.config import AdaptationConfig, MatchConfig
 
 # agent_state_factor bounds to prevent unrealistic match outcomes.
 _STATE_FACTOR_MIN = 0.5
@@ -97,6 +97,7 @@ def simulate_match(
     starters: list[PlayerAgent],
     fixture: Fixture,
     adaptation: AdaptationConfig,
+    match_config: MatchConfig,
     rng: np.random.Generator,
 ) -> MatchResult:
     """Simulate a single match and return the result.
@@ -106,13 +107,13 @@ def simulate_match(
     Poisson distribution.
 
     Args:
-        team:       Simulated team's baseline metrics.
-        opponent:   Opponent's strength snapshot at trigger point.
-        starters:   Starting XI of the simulated team.
-        fixture:    Fixture being played (provides is_home).
-        adaptation: Adaptation config (provides fatigue_penalty_weight
-                    and home_advantage_factor).
-        rng:        Seeded random generator for reproducibility.
+        team:         Simulated team's baseline metrics.
+        opponent:     Opponent's strength snapshot at trigger point.
+        starters:     Starting XI of the simulated team.
+        fixture:      Fixture being played (provides is_home).
+        adaptation:   Adaptation config (provides fatigue_penalty_weight).
+        match_config: Match config (provides home_advantage_factor).
+        rng:          Seeded random generator for reproducibility.
 
     Returns:
         MatchResult with goals, home/away flag, and points earned.
@@ -128,9 +129,9 @@ def simulate_match(
 
     # Home advantage: boost expected goals for the home side.
     if fixture.is_home:
-        expected_for *= adaptation.home_advantage_factor
+        expected_for *= match_config.home_advantage_factor
     else:
-        expected_against *= adaptation.home_advantage_factor
+        expected_against *= match_config.home_advantage_factor
 
     # Poisson lambda must be non-negative.
     goals_for = int(rng.poisson(max(expected_for, 0.0)))

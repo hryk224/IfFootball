@@ -175,6 +175,7 @@ class Simulation:
                 lineup.starters,
                 fixture,
                 self._rules.adaptation,
+                self._rules.match,
                 self._rng,
             )
             match_results.append(result)

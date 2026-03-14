@@ -1,0 +1,10 @@
+# Match result calculation parameters for the simulation engine.
+#
+# All values are provisional and subject to community review.
+# Rationale will be documented in docs/simulation-rules.md (M4).
+
+# Home advantage multiplier for expected goals.
+# When is_home=True, expected_for *= this factor.
+# When is_home=False, expected_against *= this factor (opponent is at home).
+# Must be > 0.
+home_advantage_factor = 1.1

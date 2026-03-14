@@ -8,6 +8,7 @@ from iffootball.agents.manager import ManagerAgent
 from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.config import (
     AdaptationConfig,
+    MatchConfig,
     ManagerTurningPointConfig,
     PlayerTurningPointConfig,
     SimulationRules,
@@ -35,7 +36,6 @@ def _rules() -> SimulationRules:
             fatigue_penalty_weight=0.5,
             trust_increase_on_start=0.02,
             trust_decrease_on_bench=0.01,
-            home_advantage_factor=1.1,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(
@@ -50,6 +50,7 @@ def _rules() -> SimulationRules:
                 style_stubbornness_threshold=80,
             ),
         ),
+        match=MatchConfig(home_advantage_factor=1.1),
     )
 
 

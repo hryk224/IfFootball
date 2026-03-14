@@ -8,6 +8,7 @@ Config directory layout:
     config/simulation_rules/
         adaptation.toml       — weekly state update parameters
         turning_points.toml   — turning point detection thresholds
+        match.toml            — match result calculation parameters
 
 Each file uses top-level keys (no wrapper section). The turning_points
 file uses [player] and [manager] sections.
@@ -45,11 +46,6 @@ class AdaptationConfig:
                                      as starter (0.0-1.0).
         trust_decrease_on_bench:    manager_trust decrease when benched
                                      (0.0-1.0).
-        home_advantage_factor:      Multiplier for expected goals when the
-                                     simulated team plays at home (or for
-                                     the opponent when away). Provisionally
-                                     placed here; semantically belongs to
-                                     match result parameters. Must be > 0.
     """
 
     base_fatigue_increase: float
@@ -58,7 +54,6 @@ class AdaptationConfig:
     fatigue_penalty_weight: float
     trust_increase_on_start: float
     trust_decrease_on_bench: float
-    home_advantage_factor: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -91,6 +86,26 @@ class AdaptationConfig:
                 f"trust_decrease_on_bench must be in [0.0, 1.0], "
                 f"got {self.trust_decrease_on_bench}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Match config
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MatchConfig:
+    """Match result calculation parameters.
+
+    Attributes:
+        home_advantage_factor: Multiplier for expected goals when the
+                               simulated team plays at home (or for
+                               the opponent when away). Must be > 0.
+    """
+
+    home_advantage_factor: float
+
+    def __post_init__(self) -> None:
         if self.home_advantage_factor <= 0:
             raise ValueError(
                 f"home_advantage_factor must be > 0, "
@@ -210,6 +225,7 @@ class SimulationRules:
 
     adaptation: AdaptationConfig
     turning_points: TurningPointConfig
+    match: MatchConfig
 
     @staticmethod
     def load(config_dir: str | Path) -> SimulationRules:
@@ -218,6 +234,7 @@ class SimulationRules:
         Expects the directory to contain:
             adaptation.toml
             turning_points.toml
+            match.toml
 
         Args:
             config_dir: Path to the directory containing TOML files.
@@ -236,10 +253,12 @@ class SimulationRules:
         turning_points = _load_turning_points(
             config_dir / "turning_points.toml"
         )
+        match = _load_match(config_dir / "match.toml")
 
         return SimulationRules(
             adaptation=adaptation,
             turning_points=turning_points,
+            match=match,
         )
 
 
@@ -260,6 +279,13 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
         fatigue_penalty_weight=float(data["fatigue_penalty_weight"]),
         trust_increase_on_start=float(data["trust_increase_on_start"]),
         trust_decrease_on_bench=float(data["trust_decrease_on_bench"]),
+    )
+
+
+def _load_match(path: Path) -> MatchConfig:
+    """Load MatchConfig from a TOML file."""
+    data = _read_toml(path)
+    return MatchConfig(
         home_advantage_factor=float(data["home_advantage_factor"]),
     )
 
