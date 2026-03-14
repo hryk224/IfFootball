@@ -1,15 +1,21 @@
-"""SQLite storage for initialised agent data.
+"""SQLite storage for agent and simulation data.
 
-Provides a Database class that persists and restores the following M1 domain
-objects:
+Provides a Database class that persists and restores domain objects:
+
+  M1 agent data:
   - PlayerAgent       (one per player per competition/season)
   - TeamBaseline      (one snapshot per team per competition/season)
   - ManagerAgent      (one per manager×team per competition/season)
   - OpponentStrength  (one per opponent per competition/season/trigger_week)
-  - FixtureList       (one per team per competition/season/trigger_week;
-                       stored across two tables: fixture_lists header +
-                       fixtures rows to distinguish empty-but-saved from
-                       never-saved)
+  - FixtureList       (one per team per competition/season/trigger_week)
+  - LeagueContext     (one per competition/season)
+
+  M2 simulation results:
+  - CascadeEvent      (per comparison_key + run_id, ordered by ordinal)
+  - ComparisonResult  (aggregated statistics per comparison_key;
+                       run_results are excluded — use run_results=()
+                       on load since full per-run data is too large
+                       to persist and can be reproduced from the same seed)
 
 Identifier convention (M1):
   player_id, team_name, manager_name, and opponent_name are used as canonical
@@ -34,8 +40,11 @@ Serialisation:
   bool (is_home)       → INTEGER (0 / 1)
   str | None           → TEXT / NULL
 
-CascadeEvent / ComparisonResult storage is deferred to M2 when those domain
-objects are defined.
+Note on cascade_events:
+  load_cascade_events() returns [] for both "explicitly saved empty run"
+  and "never saved". There is no header table to distinguish these cases.
+  If that distinction is needed for auditing, a header table can be added
+  in a future milestone.
 """
 
 from __future__ import annotations
@@ -47,9 +56,16 @@ from pathlib import Path
 from typing import Any
 
 from iffootball.agents.fixture import Fixture, FixtureList, OpponentStrength
+from iffootball.agents.league import LeagueContext
 from iffootball.agents.manager import ManagerAgent
 from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.agents.team import TeamBaseline
+from iffootball.simulation.cascade_tracker import CascadeEvent
+from iffootball.simulation.comparison import (
+    AggregatedResult,
+    ComparisonResult,
+    DeltaMetrics,
+)
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -148,6 +164,39 @@ CREATE TABLE IF NOT EXISTS fixtures (
     is_home               INTEGER NOT NULL,
     PRIMARY KEY (team_name, competition_id, season_id, trigger_week, ordinal)
 );
+
+CREATE TABLE IF NOT EXISTS league_contexts (
+    competition_id        INTEGER NOT NULL,
+    season_id             INTEGER NOT NULL,
+    name                  TEXT    NOT NULL,
+    avg_ppda              REAL    NOT NULL,
+    avg_progressive_passes_per90 REAL NOT NULL,
+    avg_xg_per90          REAL    NOT NULL,
+    pressing_level        TEXT,
+    physicality_level     TEXT,
+    tactical_complexity   TEXT,
+    PRIMARY KEY (competition_id, season_id)
+);
+
+CREATE TABLE IF NOT EXISTS cascade_events (
+    comparison_key        TEXT    NOT NULL,
+    run_id                TEXT    NOT NULL,
+    ordinal               INTEGER NOT NULL,
+    week                  INTEGER NOT NULL,
+    event_type            TEXT    NOT NULL,
+    affected_agent        TEXT    NOT NULL,
+    cause_chain           TEXT    NOT NULL,
+    magnitude             REAL    NOT NULL,
+    depth                 INTEGER NOT NULL,
+    PRIMARY KEY (comparison_key, run_id, ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS comparison_results (
+    comparison_key        TEXT NOT NULL PRIMARY KEY,
+    no_change_json        TEXT NOT NULL,
+    with_change_json      TEXT NOT NULL,
+    delta_json            TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -169,6 +218,57 @@ def _encode_dict(d: dict[str, float]) -> str:
 
 def _decode_dict(text: str) -> dict[str, float]:
     return dict(json.loads(text))
+
+
+def _encode_aggregated(agg: AggregatedResult) -> str:
+    """Serialise AggregatedResult to JSON (excluding run_results)."""
+    return json.dumps(
+        {
+            "n_runs": agg.n_runs,
+            "total_points_mean": agg.total_points_mean,
+            "total_points_median": agg.total_points_median,
+            "total_points_std": agg.total_points_std,
+            "cascade_event_counts": agg.cascade_event_counts,
+        }
+    )
+
+
+def _decode_aggregated(text: str) -> AggregatedResult:
+    """Deserialise AggregatedResult from JSON. run_results is empty tuple."""
+    d = json.loads(text)
+    return AggregatedResult(
+        n_runs=int(d["n_runs"]),
+        total_points_mean=float(d["total_points_mean"]),
+        total_points_median=float(d["total_points_median"]),
+        total_points_std=float(d["total_points_std"]),
+        cascade_event_counts={
+            str(k): float(v) for k, v in d["cascade_event_counts"].items()
+        },
+        run_results=(),
+    )
+
+
+def _encode_delta(delta: DeltaMetrics) -> str:
+    """Serialise DeltaMetrics to JSON."""
+    return json.dumps(
+        {
+            "points_mean_diff": delta.points_mean_diff,
+            "points_median_diff": delta.points_median_diff,
+            "cascade_count_diff": delta.cascade_count_diff,
+        }
+    )
+
+
+def _decode_delta(text: str) -> DeltaMetrics:
+    """Deserialise DeltaMetrics from JSON."""
+    d = json.loads(text)
+    return DeltaMetrics(
+        points_mean_diff=float(d["points_mean_diff"]),
+        points_median_diff=float(d["points_median_diff"]),
+        cascade_count_diff={
+            str(k): float(v) for k, v in d["cascade_count_diff"].items()
+        },
+    )
 
 
 def _encode_float(value: float) -> float | None:
@@ -620,4 +720,193 @@ class Database:
             team_name=team_name,
             trigger_week=trigger_week,
             fixtures=fixtures,
+        )
+
+    # -----------------------------------------------------------------------
+    # LeagueContext
+    # -----------------------------------------------------------------------
+
+    def save_league_context(self, context: LeagueContext) -> None:
+        """Persist a LeagueContext snapshot.
+
+        One snapshot per (competition_id, season_id). Re-saving overwrites.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO league_contexts VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(competition_id, season_id) DO UPDATE SET
+                name=excluded.name,
+                avg_ppda=excluded.avg_ppda,
+                avg_progressive_passes_per90=excluded.avg_progressive_passes_per90,
+                avg_xg_per90=excluded.avg_xg_per90,
+                pressing_level=excluded.pressing_level,
+                physicality_level=excluded.physicality_level,
+                tactical_complexity=excluded.tactical_complexity
+            """,
+            (
+                context.competition_id,
+                context.season_id,
+                context.name,
+                context.avg_ppda,
+                context.avg_progressive_passes_per90,
+                context.avg_xg_per90,
+                context.pressing_level,
+                context.physicality_level,
+                context.tactical_complexity,
+            ),
+        )
+        self._conn.commit()
+
+    def load_league_context(
+        self,
+        competition_id: int,
+        season_id: int,
+    ) -> LeagueContext | None:
+        """Load a LeagueContext. Returns None if not found."""
+        r = self._conn.execute(
+            """
+            SELECT * FROM league_contexts
+            WHERE competition_id=? AND season_id=?
+            """,
+            (competition_id, season_id),
+        ).fetchone()
+        if r is None:
+            return None
+        return LeagueContext(
+            competition_id=int(r["competition_id"]),
+            season_id=int(r["season_id"]),
+            name=str(r["name"]),
+            avg_ppda=float(r["avg_ppda"]),
+            avg_progressive_passes_per90=float(r["avg_progressive_passes_per90"]),
+            avg_xg_per90=float(r["avg_xg_per90"]),
+            pressing_level=r["pressing_level"],
+            physicality_level=r["physicality_level"],
+            tactical_complexity=r["tactical_complexity"],
+        )
+
+    # -----------------------------------------------------------------------
+    # CascadeEvent
+    # -----------------------------------------------------------------------
+
+    def save_cascade_events(
+        self,
+        comparison_key: str,
+        run_id: str,
+        events: list[CascadeEvent],
+    ) -> None:
+        """Persist a list of CascadeEvent for a specific run.
+
+        Events are stored with an ordinal to preserve ordering.
+        Re-saving deletes existing events for the same key+run_id.
+
+        Args:
+            comparison_key: Identifies the comparison this run belongs to.
+            run_id:         Identifies the specific run (e.g. "a_0", "b_3").
+                            Naming convention is caller's responsibility.
+            events:         Ordered list of cascade events.
+        """
+        pk = (comparison_key, run_id)
+        rows = [
+            (
+                comparison_key,
+                run_id,
+                ordinal,
+                e.week,
+                e.event_type,
+                e.affected_agent,
+                json.dumps(e.cause_chain),
+                e.magnitude,
+                e.depth,
+            )
+            for ordinal, e in enumerate(events)
+        ]
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM cascade_events WHERE comparison_key=? AND run_id=?",
+                pk,
+            )
+            self._conn.executemany(
+                "INSERT INTO cascade_events VALUES (?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+
+    def load_cascade_events(
+        self,
+        comparison_key: str,
+        run_id: str,
+    ) -> list[CascadeEvent]:
+        """Load CascadeEvent list for a run. Returns empty list if not found."""
+        rows = self._conn.execute(
+            """
+            SELECT * FROM cascade_events
+            WHERE comparison_key=? AND run_id=?
+            ORDER BY ordinal
+            """,
+            (comparison_key, run_id),
+        ).fetchall()
+        return [
+            CascadeEvent(
+                week=int(r["week"]),
+                event_type=str(r["event_type"]),
+                affected_agent=str(r["affected_agent"]),
+                cause_chain=tuple(json.loads(r["cause_chain"])),
+                magnitude=float(r["magnitude"]),
+                depth=int(r["depth"]),
+            )
+            for r in rows
+        ]
+
+    # -----------------------------------------------------------------------
+    # ComparisonResult
+    # -----------------------------------------------------------------------
+
+    def save_comparison_result(
+        self,
+        comparison_key: str,
+        result: ComparisonResult,
+    ) -> None:
+        """Persist a ComparisonResult's aggregated statistics.
+
+        run_results are excluded from persistence (too large). On load,
+        run_results is restored as an empty tuple. Full per-run data can
+        be reproduced by re-running with the same seed.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO comparison_results VALUES (?,?,?,?)
+            ON CONFLICT(comparison_key) DO UPDATE SET
+                no_change_json=excluded.no_change_json,
+                with_change_json=excluded.with_change_json,
+                delta_json=excluded.delta_json
+            """,
+            (
+                comparison_key,
+                _encode_aggregated(result.no_change),
+                _encode_aggregated(result.with_change),
+                _encode_delta(result.delta),
+            ),
+        )
+        self._conn.commit()
+
+    def load_comparison_result(
+        self,
+        comparison_key: str,
+    ) -> ComparisonResult | None:
+        """Load a ComparisonResult. Returns None if not found.
+
+        run_results on both AggregatedResult instances are empty tuples
+        since per-run SimulationResult data is not persisted.
+        """
+        r = self._conn.execute(
+            """
+            SELECT * FROM comparison_results WHERE comparison_key=?
+            """,
+            (comparison_key,),
+        ).fetchone()
+        if r is None:
+            return None
+        return ComparisonResult(
+            no_change=_decode_aggregated(r["no_change_json"]),
+            with_change=_decode_aggregated(r["with_change_json"]),
+            delta=_decode_delta(r["delta_json"]),
         )

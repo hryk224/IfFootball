@@ -7,9 +7,16 @@ import math
 import pytest
 
 from iffootball.agents.fixture import Fixture, FixtureList, OpponentStrength
+from iffootball.agents.league import LeagueContext
 from iffootball.agents.manager import ManagerAgent
 from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.agents.team import TeamBaseline
+from iffootball.simulation.cascade_tracker import CascadeEvent
+from iffootball.simulation.comparison import (
+    AggregatedResult,
+    ComparisonResult,
+    DeltaMetrics,
+)
 from iffootball.storage.db import Database
 
 
@@ -464,3 +471,191 @@ class TestFixtureList:
         assert loaded is not None
         with pytest.raises((AttributeError, TypeError)):
             loaded.fixtures[0].is_home = False  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# TestLeagueContext
+# ---------------------------------------------------------------------------
+
+
+def _make_league_context() -> LeagueContext:
+    return LeagueContext(
+        competition_id=2,
+        season_id=27,
+        name="Premier League",
+        avg_ppda=10.5,
+        avg_progressive_passes_per90=45.0,
+        avg_xg_per90=1.3,
+        pressing_level="high",
+        physicality_level="mid",
+        tactical_complexity=None,
+    )
+
+
+class TestLeagueContext:
+    def test_save_and_load_roundtrip(self, db: Database) -> None:
+        ctx = _make_league_context()
+        db.save_league_context(ctx)
+        loaded = db.load_league_context(2, 27)
+        assert loaded is not None
+        assert loaded.competition_id == 2
+        assert loaded.name == "Premier League"
+        assert loaded.avg_ppda == pytest.approx(10.5)
+        assert loaded.pressing_level == "high"
+        assert loaded.tactical_complexity is None
+
+    def test_returns_none_when_missing(self, db: Database) -> None:
+        assert db.load_league_context(99, 99) is None
+
+    def test_upsert(self, db: Database) -> None:
+        ctx = _make_league_context()
+        db.save_league_context(ctx)
+        from dataclasses import replace
+        updated = replace(ctx, avg_ppda=12.0)
+        db.save_league_context(updated)
+        loaded = db.load_league_context(2, 27)
+        assert loaded is not None
+        assert loaded.avg_ppda == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# TestCascadeEvents
+# ---------------------------------------------------------------------------
+
+
+def _make_cascade_events() -> list[CascadeEvent]:
+    return [
+        CascadeEvent(
+            week=5,
+            event_type="form_drop",
+            affected_agent="Player A",
+            cause_chain=("trust_decline",),
+            magnitude=0.3,
+            depth=2,
+        ),
+        CascadeEvent(
+            week=5,
+            event_type="trust_decline",
+            affected_agent="Player A",
+            cause_chain=("form_drop", "trust_decline"),
+            magnitude=0.2,
+            depth=3,
+        ),
+    ]
+
+
+class TestCascadeEvents:
+    def test_save_and_load_roundtrip(self, db: Database) -> None:
+        events = _make_cascade_events()
+        db.save_cascade_events("cmp1", "a_0", events)
+        loaded = db.load_cascade_events("cmp1", "a_0")
+        assert len(loaded) == 2
+        assert loaded[0].event_type == "form_drop"
+        assert loaded[0].cause_chain == ("trust_decline",)
+        assert loaded[1].depth == 3
+
+    def test_empty_list(self, db: Database) -> None:
+        db.save_cascade_events("cmp1", "a_0", [])
+        loaded = db.load_cascade_events("cmp1", "a_0")
+        assert loaded == []
+
+    def test_missing_key_returns_empty(self, db: Database) -> None:
+        loaded = db.load_cascade_events("nonexistent", "run_0")
+        assert loaded == []
+
+    def test_order_preserved(self, db: Database) -> None:
+        events = _make_cascade_events()
+        db.save_cascade_events("cmp1", "a_0", events)
+        loaded = db.load_cascade_events("cmp1", "a_0")
+        assert loaded[0].event_type == "form_drop"
+        assert loaded[1].event_type == "trust_decline"
+
+    def test_different_runs_isolated(self, db: Database) -> None:
+        e1 = [_make_cascade_events()[0]]
+        e2 = [_make_cascade_events()[1]]
+        db.save_cascade_events("cmp1", "a_0", e1)
+        db.save_cascade_events("cmp1", "b_0", e2)
+        assert len(db.load_cascade_events("cmp1", "a_0")) == 1
+        assert len(db.load_cascade_events("cmp1", "b_0")) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestComparisonResult
+# ---------------------------------------------------------------------------
+
+
+def _make_comparison_result() -> ComparisonResult:
+    agg_a = AggregatedResult(
+        n_runs=3,
+        total_points_mean=5.0,
+        total_points_median=4.0,
+        total_points_std=1.5,
+        cascade_event_counts={"form_drop": 1.0},
+        run_results=(),
+    )
+    agg_b = AggregatedResult(
+        n_runs=3,
+        total_points_mean=7.0,
+        total_points_median=6.0,
+        total_points_std=2.0,
+        cascade_event_counts={"form_drop": 2.0, "trust_decline": 0.5},
+        run_results=(),
+    )
+    delta = DeltaMetrics(
+        points_mean_diff=2.0,
+        points_median_diff=2.0,
+        cascade_count_diff={"form_drop": 1.0, "trust_decline": 0.5},
+    )
+    return ComparisonResult(no_change=agg_a, with_change=agg_b, delta=delta)
+
+
+class TestComparisonResult:
+    def test_save_and_load_roundtrip(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result("test_key", cr)
+        loaded = db.load_comparison_result("test_key")
+        assert loaded is not None
+        assert loaded.no_change.n_runs == 3
+        assert loaded.no_change.total_points_mean == pytest.approx(5.0)
+        assert loaded.with_change.total_points_mean == pytest.approx(7.0)
+        assert loaded.delta.points_mean_diff == pytest.approx(2.0)
+
+    def test_cascade_event_counts_preserved(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result("k", cr)
+        loaded = db.load_comparison_result("k")
+        assert loaded is not None
+        assert loaded.with_change.cascade_event_counts["trust_decline"] == pytest.approx(0.5)
+
+    def test_returns_none_when_missing(self, db: Database) -> None:
+        assert db.load_comparison_result("nonexistent") is None
+
+    def test_run_results_empty_on_load(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result("k", cr)
+        loaded = db.load_comparison_result("k")
+        assert loaded is not None
+        assert loaded.no_change.run_results == ()
+        assert loaded.with_change.run_results == ()
+
+    def test_upsert(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result("k", cr)
+        # Save again with different data
+        updated_agg = AggregatedResult(
+            n_runs=5,
+            total_points_mean=9.0,
+            total_points_median=8.0,
+            total_points_std=1.0,
+            cascade_event_counts={},
+            run_results=(),
+        )
+        updated = ComparisonResult(
+            no_change=updated_agg,
+            with_change=updated_agg,
+            delta=DeltaMetrics(0.0, 0.0, {}),
+        )
+        db.save_comparison_result("k", updated)
+        loaded = db.load_comparison_result("k")
+        assert loaded is not None
+        assert loaded.no_change.n_runs == 5
