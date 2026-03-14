@@ -16,6 +16,11 @@ tactical_understanding_low = 0.40
 # low tactical_understanding triggers a turning point.
 short_term_window = 4
 
+# manager_trust below this value combined with bench_streak TP triggers
+# resist-heavy response in the RuleBasedHandler.
+# Scale: 0-100 (matches PlayerAgent.manager_trust range).
+trust_low = 40.0
+
 [manager]
 # job_security below this value causes a shift to defensive tactics.
 # Scale: 0.0-1.0.

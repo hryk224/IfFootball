@@ -51,6 +51,7 @@ def _make_config_dir(
             bench_streak_threshold = 3
             tactical_understanding_low = 0.40
             short_term_window = 4
+            trust_low = 40.0
 
             [manager]
             job_security_warning = 0.30
@@ -135,6 +136,7 @@ class TestSimulationRulesLoadErrors:
             bench_streak_threshold = 3
             tactical_understanding_low = 0.40
             short_term_window = 4
+            trust_low = 40.0
             [manager]
             job_security_warning = 0.30
             job_security_critical = 0.10
@@ -249,6 +251,7 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=0,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
+                trust_low=40.0,
             )
 
     def test_tactical_understanding_low_out_of_range(self) -> None:
@@ -257,6 +260,7 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=3,
                 tactical_understanding_low=1.5,
                 short_term_window=4,
+                trust_low=40.0,
             )
 
     def test_short_term_window_zero(self) -> None:
@@ -265,6 +269,16 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=0,
+                trust_low=40.0,
+            )
+
+    def test_negative_trust_low(self) -> None:
+        with pytest.raises(ValueError, match="trust_low"):
+            PlayerTurningPointConfig(
+                bench_streak_threshold=3,
+                tactical_understanding_low=0.40,
+                short_term_window=4,
+                trust_low=-1.0,
             )
 
 

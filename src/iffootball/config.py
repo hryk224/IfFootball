@@ -105,11 +105,15 @@ class PlayerTurningPointConfig:
                                     (0.0-1.0 scale).
         short_term_window:          Matches after appointment during which
                                     low tactical_understanding fires a TP.
+        trust_low:                  manager_trust below this value combined
+                                    with bench_streak TP triggers resist-heavy
+                                    response. **0-100 scale**.
     """
 
     bench_streak_threshold: int
     tactical_understanding_low: float
     short_term_window: int
+    trust_low: float
 
     def __post_init__(self) -> None:
         if self.bench_streak_threshold < 1:
@@ -126,6 +130,11 @@ class PlayerTurningPointConfig:
             raise ValueError(
                 f"short_term_window must be >= 1, "
                 f"got {self.short_term_window}"
+            )
+        if self.trust_low < 0:
+            raise ValueError(
+                f"trust_low must be >= 0, "
+                f"got {self.trust_low}"
             )
 
 
@@ -257,6 +266,7 @@ def _load_turning_points(path: Path) -> TurningPointConfig:
             player_data["tactical_understanding_low"]
         ),
         short_term_window=int(player_data["short_term_window"]),
+        trust_low=float(player_data["trust_low"]),
     )
 
     manager = ManagerTurningPointConfig(

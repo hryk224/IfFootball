@@ -43,6 +43,7 @@ def _rules() -> SimulationRules:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
+                trust_low=40.0,
             ),
             manager=ManagerTurningPointConfig(
                 job_security_warning=0.30,
