@@ -25,15 +25,15 @@ _DEFAULT_ADAPTATION = AdaptationConfig(
     base_fatigue_recovery=0.03,
     tactical_understanding_gain=0.04,
     fatigue_penalty_weight=0.5,
-    trust_increase_on_start=2.0,
-    trust_decrease_on_bench=1.0,
+    trust_increase_on_start=0.02,
+    trust_decrease_on_bench=0.01,
     home_advantage_factor=1.1,
 )
 
 
 def _make_player(
     player_id: int = 1,
-    current_form: float = 50.0,
+    current_form: float = 0.5,
     fatigue: float = 0.0,
 ) -> PlayerAgent:
     """Create a minimal PlayerAgent with specified form and fatigue."""
@@ -57,7 +57,7 @@ def _make_player(
 
 def _make_starters(
     n: int = 11,
-    current_form: float = 50.0,
+    current_form: float = 0.5,
     fatigue: float = 0.0,
 ) -> list[PlayerAgent]:
     return [_make_player(i, current_form, fatigue) for i in range(1, n + 1)]
@@ -101,8 +101,8 @@ def _make_fixture(is_home: bool = True) -> Fixture:
 
 class TestCalcAgentStateFactor:
     def test_neutral_starters(self) -> None:
-        """Neutral form (50.0) and zero fatigue -> factor 1.0."""
-        starters = _make_starters(current_form=50.0, fatigue=0.0)
+        """Neutral form (0.5) and zero fatigue -> factor 1.0."""
+        starters = _make_starters(current_form=0.5, fatigue=0.0)
         factor = calc_agent_state_factor(starters, 0.5)
         assert factor == pytest.approx(1.0)
 
@@ -111,32 +111,32 @@ class TestCalcAgentStateFactor:
         assert factor == 1.0
 
     def test_high_form_increases_factor(self) -> None:
-        starters = _make_starters(current_form=75.0, fatigue=0.0)
+        starters = _make_starters(current_form=0.75, fatigue=0.0)
         factor = calc_agent_state_factor(starters, 0.5)
-        assert factor == pytest.approx(75.0 / 50.0)
+        assert factor == pytest.approx(0.75 / 0.5)
         assert factor == pytest.approx(1.5)
 
     def test_high_fatigue_decreases_factor(self) -> None:
-        starters = _make_starters(current_form=50.0, fatigue=0.8)
+        starters = _make_starters(current_form=0.5, fatigue=0.8)
         factor = calc_agent_state_factor(starters, 0.5)
         # 1.0 * (1.0 - 0.8 * 0.5) = 1.0 * 0.6 = 0.6
         assert factor == pytest.approx(0.6)
 
     def test_clamped_to_minimum(self) -> None:
         """Very high fatigue + low form should clamp to 0.5."""
-        starters = _make_starters(current_form=10.0, fatigue=1.0)
+        starters = _make_starters(current_form=0.1, fatigue=1.0)
         factor = calc_agent_state_factor(starters, 0.5)
         assert factor == 0.5
 
     def test_clamped_to_maximum(self) -> None:
         """Very high form should clamp to 1.5."""
-        starters = _make_starters(current_form=100.0, fatigue=0.0)
+        starters = _make_starters(current_form=1.0, fatigue=0.0)
         factor = calc_agent_state_factor(starters, 0.5)
-        assert factor == 1.5
+        assert factor == pytest.approx(1.5)
 
     def test_fatigue_penalty_weight_zero(self) -> None:
         """When weight is 0, fatigue has no effect."""
-        starters = _make_starters(current_form=50.0, fatigue=1.0)
+        starters = _make_starters(current_form=0.5, fatigue=1.0)
         factor = calc_agent_state_factor(starters, 0.0)
         assert factor == pytest.approx(1.0)
 

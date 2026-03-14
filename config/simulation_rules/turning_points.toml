@@ -18,8 +18,8 @@ short_term_window = 4
 
 # manager_trust below this value combined with bench_streak TP triggers
 # resist-heavy response in the RuleBasedHandler.
-# Scale: 0-100 (matches PlayerAgent.manager_trust range).
-trust_low = 40.0
+# Scale: 0.0-1.0.
+trust_low = 0.40
 
 [manager]
 # job_security below this value causes a shift to defensive tactics.

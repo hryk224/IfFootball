@@ -5,25 +5,25 @@ formation and a per-player selection_score. Players not selected have
 their bench_streak incremented; selected players have it reset to 0.
 
 Selection score formula:
-    tactical_fit = (pressing_fit + possession_fit) / 2.0
+    tactical_fit = (pressing_fit + possession_fit) / 2.0 / 100.0
     where:
         pressing_fit  = player.pressing * normalised_pressing_intensity
         possession_fit = player.passing * manager.possession_preference
+        (technical attributes are 0-100; / 100.0 normalises to 0-1)
 
     score = tactical_fit
             + player.manager_trust
             + player.current_form
-            - player.fatigue * fatigue_penalty_weight * 100.0
+            - player.fatigue * fatigue_penalty_weight
             - low_understanding_penalty
+
+    All components are on 0.0-1.0 scale. The score is used for relative
+    ranking only; absolute magnitude does not matter.
 
     low_understanding_penalty is applied only when:
         1. matches_since_appointment is not None
         2. matches_since_appointment <= rules.turning_points.player.short_term_window
-        3. player.tactical_understanding < rules.turning_points.player.tactical_understanding_low * 100.0
-
-    The 100.0 scaling converts 0.0-1.0 config thresholds to the 0-100
-    scale used by PlayerAgent attributes. This will be removed when
-    PlayerAgent dynamic state migrates to 0.0-1.0 in player-state-update.
+        3. player.tactical_understanding < rules.turning_points.player.tactical_understanding_low
 
     penalty value = (threshold - player.tactical_understanding)
 """
@@ -111,25 +111,21 @@ def calc_selection_score(
                                    manager (no appointment event).
     """
     # Tactical fit: how well the player suits the manager's style.
+    # Technical attributes (pressing, passing) are 0-100; normalise to 0-1.
     normalised_pressing = manager.pressing_intensity / _PRESSING_NORMALISATION
     pressing_fit = player.pressing * normalised_pressing
     possession_fit = player.passing * manager.possession_preference
-    tactical_fit = (pressing_fit + possession_fit) / 2.0
+    tactical_fit = (pressing_fit + possession_fit) / 2.0 / 100.0
 
-    # Fatigue penalty (config-driven weight).
-    fatigue_penalty = (
-        player.fatigue
-        * rules.adaptation.fatigue_penalty_weight
-        * 100.0  # scale to match 0-100 attribute range
-    )
+    # Fatigue penalty (config-driven weight, all 0-1 scale).
+    fatigue_penalty = player.fatigue * rules.adaptation.fatigue_penalty_weight
 
     # Low tactical understanding penalty (short-term window only).
     low_understanding_penalty = 0.0
     tp = rules.turning_points.player
     if matches_since_appointment is not None:
         if matches_since_appointment <= tp.short_term_window:
-            # Convert 0.0-1.0 threshold to 0-100 scale.
-            threshold = tp.tactical_understanding_low * 100.0
+            threshold = tp.tactical_understanding_low
             if player.tactical_understanding < threshold:
                 low_understanding_penalty = (
                     threshold - player.tactical_understanding

@@ -269,8 +269,8 @@ class Simulation:
 
             # Reset squad trust and tactical understanding for new manager.
             for p in self._squad:
-                p.tactical_understanding = 25.0  # low starting point
-                p.manager_trust = 50.0  # neutral
+                p.tactical_understanding = 0.25  # low starting point
+                p.manager_trust = 0.5  # neutral
 
     def _process_player_turning_points(
         self,
@@ -292,8 +292,8 @@ class Simulation:
             # 10. Record cascade events and apply state effects.
             if action == "resist":
                 # Form drops and trust declines.
-                player.current_form = max(0.0, player.current_form - 5.0)
-                player.manager_trust = max(0.0, player.manager_trust - 3.0)
+                player.current_form = max(0.0, player.current_form - 0.05)
+                player.manager_trust = max(0.0, player.manager_trust - 0.03)
                 form_event = tracker.record(
                     week=week,
                     event_type="form_drop",

@@ -36,8 +36,8 @@ def _rules() -> SimulationRules:
             base_fatigue_recovery=0.03,
             tactical_understanding_gain=0.04,
             fatigue_penalty_weight=0.5,
-            trust_increase_on_start=2.0,
-            trust_decrease_on_bench=1.0,
+            trust_increase_on_start=0.02,
+            trust_decrease_on_bench=0.01,
             home_advantage_factor=1.1,
         ),
         turning_points=TurningPointConfig(
@@ -45,7 +45,7 @@ def _rules() -> SimulationRules:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             ),
             manager=ManagerTurningPointConfig(
                 job_security_warning=0.30,
@@ -169,32 +169,32 @@ class TestDetectPlayerTurningPoints:
         assert "bench_streak" not in tps
 
     def test_low_understanding_in_short_term(self) -> None:
-        player = _make_player(tactical_understanding=30.0)
+        player = _make_player(tactical_understanding=0.30)
         ctx = _context(matches_since_appointment=2)
         tps = detect_player_turning_points(player, ctx, _rules())
         assert "low_understanding" in tps
 
     def test_low_understanding_outside_window(self) -> None:
-        player = _make_player(tactical_understanding=30.0)
+        player = _make_player(tactical_understanding=0.30)
         ctx = _context(matches_since_appointment=10)
         tps = detect_player_turning_points(player, ctx, _rules())
         assert "low_understanding" not in tps
 
     def test_low_understanding_no_appointment(self) -> None:
-        player = _make_player(tactical_understanding=30.0)
+        player = _make_player(tactical_understanding=0.30)
         ctx = _context(matches_since_appointment=None)
         tps = detect_player_turning_points(player, ctx, _rules())
         assert "low_understanding" not in tps
 
     def test_understanding_at_threshold_no_tp(self) -> None:
-        # threshold is 0.40 * 100 = 40.0; at threshold → no TP
-        player = _make_player(tactical_understanding=40.0)
+        # threshold is 0.40; at threshold → no TP
+        player = _make_player(tactical_understanding=0.40)
         ctx = _context(matches_since_appointment=2)
         tps = detect_player_turning_points(player, ctx, _rules())
         assert "low_understanding" not in tps
 
     def test_both_tps_simultaneously(self) -> None:
-        player = _make_player(bench_streak=5, tactical_understanding=20.0)
+        player = _make_player(bench_streak=5, tactical_understanding=0.20)
         ctx = _context(matches_since_appointment=1)
         tps = detect_player_turning_points(player, ctx, _rules())
         assert "bench_streak" in tps
@@ -258,20 +258,20 @@ class TestRuleBasedHandler:
 
     def test_bench_streak_low_trust_resist_heavy(self) -> None:
         handler = RuleBasedHandler(_rules())
-        player = _make_player(bench_streak=5, manager_trust=20.0)
+        player = _make_player(bench_streak=5, manager_trust=0.20)
         dist = handler.handle(player, _context())
         assert dist.choices["resist"] > dist.choices["adapt"]
 
     def test_bench_streak_high_trust_not_resist(self) -> None:
         """High trust bench player should still adapt."""
         handler = RuleBasedHandler(_rules())
-        player = _make_player(bench_streak=5, manager_trust=80.0)
+        player = _make_player(bench_streak=5, manager_trust=0.80)
         dist = handler.handle(player, _context())
         assert dist.choices["adapt"] > dist.choices["resist"]
 
     def test_low_understanding_adapt_slightly_higher(self) -> None:
         handler = RuleBasedHandler(_rules())
-        player = _make_player(tactical_understanding=20.0)
+        player = _make_player(tactical_understanding=0.20)
         ctx = _context(matches_since_appointment=2)
         dist = handler.handle(player, ctx)
         assert dist.choices["adapt"] > dist.choices["resist"]

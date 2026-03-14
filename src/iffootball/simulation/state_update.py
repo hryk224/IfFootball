@@ -8,12 +8,10 @@ Updates player and manager dynamic state after each match week:
 
 All parameter values come from SimulationRules (no hardcoded thresholds).
 
-Scale note:
-    PlayerAgent dynamic attributes (current_form, manager_trust,
-    tactical_understanding) are currently on a 0-100 scale.
-    Config values (tactical_understanding_gain) are on 0.0-1.0.
-    Conversions use * 100.0 where needed. These will be removed when
-    PlayerAgent migrates to 0.0-1.0 in a future task.
+Scale: PlayerAgent dynamic attributes (current_form, manager_trust,
+tactical_understanding) and all config values are on 0.0-1.0.
+Technical/adaptation attributes (tactical_adaptability, implementation_speed)
+remain 0-100 and are normalised within calc_adaptation_rate().
 """
 
 from __future__ import annotations
@@ -94,6 +92,9 @@ def calc_adaptation_rate(
 
     rate = (tactical_adaptability / 100) * (implementation_speed / 100) * familiarity
 
+    tactical_adaptability and implementation_speed are 0-100 scale
+    attributes; dividing by 100 normalises them to [0.0, 1.0].
+
     Returns a value in [0.0, 1.0] that scales the weekly
     tactical_understanding_gain from config.
     """
@@ -112,10 +113,8 @@ def update_tactical_understanding(
 ) -> None:
     """Update tactical_understanding for all players.
 
-    gain = adaptation_rate * tactical_understanding_gain * 100.0
-    (config gain is 0.0-1.0 scale; PlayerAgent attribute is 0-100)
-
-    Capped at 100.0.
+    gain = adaptation_rate * tactical_understanding_gain
+    Both are on 0.0-1.0 scale. Capped at 1.0.
 
     Args:
         squad:   All players in the squad.
@@ -125,9 +124,8 @@ def update_tactical_understanding(
     gain_config = rules.adaptation.tactical_understanding_gain
     for p in squad:
         rate = calc_adaptation_rate(p, manager)
-        # Convert 0.0-1.0 config gain to 0-100 attribute scale.
-        delta = rate * gain_config * 100.0
-        p.tactical_understanding = min(100.0, p.tactical_understanding + delta)
+        delta = rate * gain_config
+        p.tactical_understanding = min(1.0, p.tactical_understanding + delta)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +141,7 @@ def update_manager_trust(
     """Update manager_trust for all players after a match week.
 
     Starters gain trust; non-starters lose trust.
-    Trust is clamped to [0.0, 100.0] (0-100 scale).
+    Trust is clamped to [0.0, 1.0].
 
     Args:
         squad:       All players in the squad.
@@ -153,7 +151,7 @@ def update_manager_trust(
     for p in squad:
         if p.player_id in starter_ids:
             p.manager_trust = min(
-                100.0,
+                1.0,
                 p.manager_trust + rules.adaptation.trust_increase_on_start,
             )
         else:

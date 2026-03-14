@@ -42,10 +42,9 @@ class AdaptationConfig:
                                      agent_state_factor in match result
                                      calculation (0.0-1.0).
         trust_increase_on_start:    manager_trust increase when selected
-                                     as starter. **0-100 scale** (matches
-                                     PlayerAgent.manager_trust range).
-        trust_decrease_on_bench:    manager_trust decrease when benched.
-                                     **0-100 scale**.
+                                     as starter (0.0-1.0).
+        trust_decrease_on_bench:    manager_trust decrease when benched
+                                     (0.0-1.0).
         home_advantage_factor:      Multiplier for expected goals when the
                                      simulated team plays at home (or for
                                      the opponent when away). Provisionally
@@ -82,14 +81,14 @@ class AdaptationConfig:
                 f"fatigue_penalty_weight must be in [0.0, 1.0], "
                 f"got {self.fatigue_penalty_weight}"
             )
-        if self.trust_increase_on_start < 0:
+        if not 0.0 <= self.trust_increase_on_start <= 1.0:
             raise ValueError(
-                f"trust_increase_on_start must be >= 0, "
+                f"trust_increase_on_start must be in [0.0, 1.0], "
                 f"got {self.trust_increase_on_start}"
             )
-        if self.trust_decrease_on_bench < 0:
+        if not 0.0 <= self.trust_decrease_on_bench <= 1.0:
             raise ValueError(
-                f"trust_decrease_on_bench must be >= 0, "
+                f"trust_decrease_on_bench must be in [0.0, 1.0], "
                 f"got {self.trust_decrease_on_bench}"
             )
         if self.home_advantage_factor <= 0:
@@ -118,7 +117,7 @@ class PlayerTurningPointConfig:
                                     low tactical_understanding fires a TP.
         trust_low:                  manager_trust below this value combined
                                     with bench_streak TP triggers resist-heavy
-                                    response. **0-100 scale**.
+                                    response (0.0-1.0).
     """
 
     bench_streak_threshold: int
@@ -142,9 +141,9 @@ class PlayerTurningPointConfig:
                 f"short_term_window must be >= 1, "
                 f"got {self.short_term_window}"
             )
-        if self.trust_low < 0:
+        if not 0.0 <= self.trust_low <= 1.0:
             raise ValueError(
-                f"trust_low must be >= 0, "
+                f"trust_low must be in [0.0, 1.0], "
                 f"got {self.trust_low}"
             )
 

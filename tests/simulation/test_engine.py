@@ -49,8 +49,8 @@ def _rules() -> SimulationRules:
             base_fatigue_recovery=0.03,
             tactical_understanding_gain=0.04,
             fatigue_penalty_weight=0.5,
-            trust_increase_on_start=2.0,
-            trust_decrease_on_bench=1.0,
+            trust_increase_on_start=0.02,
+            trust_decrease_on_bench=0.01,
             home_advantage_factor=1.1,
         ),
         turning_points=TurningPointConfig(
@@ -58,7 +58,7 @@ def _rules() -> SimulationRules:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             ),
             manager=ManagerTurningPointConfig(
                 job_security_warning=0.30,
@@ -281,10 +281,10 @@ class TestSimulationTrigger:
         )
         sim.apply_trigger(trigger)
         result = sim.run()
-        # After trigger, understanding should have started from 25.0
+        # After trigger, understanding should have started from 0.25
         # and increased over remaining weeks
         for p in result.final_squad:
-            assert p.tactical_understanding >= 25.0
+            assert p.tactical_understanding >= 0.25
 
     def test_manager_change_resets_tactical_attributes(self) -> None:
         sim = _make_simulation()

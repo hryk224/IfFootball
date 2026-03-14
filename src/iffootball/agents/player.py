@@ -67,7 +67,7 @@ class PlayerAgent:
         Adaptation attributes (fixed placeholder values for M1):
             tactical_adaptability, leadership, pressure_resistance
 
-        Dynamic state (reset to initial values each simulation run):
+        Dynamic state (reset to initial values each simulation run, 0.0-1.0 scale):
             current_form, fatigue, tactical_understanding, manager_trust, bench_streak
     """
 
@@ -91,9 +91,10 @@ class PlayerAgent:
     leadership: float = field(default=50.0)
     pressure_resistance: float = field(default=50.0)
 
-    # Dynamic state — initialised to neutral; updated each match simulation step
-    current_form: float = field(default=50.0)
+    # Dynamic state — initialised to neutral; updated each match simulation step.
+    # Scale: 0.0-1.0 (fatigue and dynamic attributes).
+    current_form: float = field(default=0.5)
     fatigue: float = field(default=0.0)
-    tactical_understanding: float = field(default=50.0)
-    manager_trust: float = field(default=50.0)
+    tactical_understanding: float = field(default=0.5)
+    manager_trust: float = field(default=0.5)
     bench_streak: int = field(default=0)

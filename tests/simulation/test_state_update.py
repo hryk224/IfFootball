@@ -35,8 +35,8 @@ def _rules() -> SimulationRules:
             base_fatigue_recovery=0.03,
             tactical_understanding_gain=0.04,
             fatigue_penalty_weight=0.5,
-            trust_increase_on_start=2.0,
-            trust_decrease_on_bench=1.0,
+            trust_increase_on_start=0.02,
+            trust_decrease_on_bench=0.01,
             home_advantage_factor=1.1,
         ),
         turning_points=TurningPointConfig(
@@ -44,7 +44,7 @@ def _rules() -> SimulationRules:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             ),
             manager=ManagerTurningPointConfig(
                 job_security_warning=0.30,
@@ -59,9 +59,9 @@ def _make_player(
     player_id: int = 1,
     broad_position: BroadPosition = BroadPosition.FW,
     fatigue: float = 0.0,
-    tactical_understanding: float = 50.0,
+    tactical_understanding: float = 0.5,
     tactical_adaptability: float = 50.0,
-    manager_trust: float = 50.0,
+    manager_trust: float = 0.5,
 ) -> PlayerAgent:
     role = {
         BroadPosition.GK: RoleFamily.GOALKEEPER,
@@ -198,17 +198,17 @@ class TestCalcAdaptationRate:
 
 class TestUpdateTacticalUnderstanding:
     def test_understanding_increases(self) -> None:
-        p = _make_player(tactical_understanding=50.0, tactical_adaptability=50.0)
+        p = _make_player(tactical_understanding=0.5, tactical_adaptability=50.0)
         mgr = _manager(implementation_speed=50.0)
         update_tactical_understanding([p], mgr, _rules())
-        # rate=0.25, gain=0.04, delta=0.25*0.04*100=1.0
-        assert p.tactical_understanding == pytest.approx(51.0)
+        # rate=0.25, gain=0.04, delta=0.25*0.04=0.01
+        assert p.tactical_understanding == pytest.approx(0.51)
 
-    def test_capped_at_100(self) -> None:
-        p = _make_player(tactical_understanding=99.5, tactical_adaptability=100.0)
+    def test_capped_at_1(self) -> None:
+        p = _make_player(tactical_understanding=0.995, tactical_adaptability=100.0)
         mgr = _manager(implementation_speed=100.0)
         update_tactical_understanding([p], mgr, _rules())
-        assert p.tactical_understanding == 100.0
+        assert p.tactical_understanding == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -218,22 +218,22 @@ class TestUpdateTacticalUnderstanding:
 
 class TestUpdateManagerTrust:
     def test_starters_gain_trust(self) -> None:
-        p = _make_player(manager_trust=50.0)
+        p = _make_player(manager_trust=0.5)
         update_manager_trust([p], {p.player_id}, _rules())
-        assert p.manager_trust == pytest.approx(52.0)
+        assert p.manager_trust == pytest.approx(0.52)
 
     def test_non_starters_lose_trust(self) -> None:
-        p = _make_player(manager_trust=50.0)
+        p = _make_player(manager_trust=0.5)
         update_manager_trust([p], set(), _rules())
-        assert p.manager_trust == pytest.approx(49.0)
+        assert p.manager_trust == pytest.approx(0.49)
 
-    def test_trust_capped_at_100(self) -> None:
-        p = _make_player(manager_trust=99.5)
+    def test_trust_capped_at_1(self) -> None:
+        p = _make_player(manager_trust=0.995)
         update_manager_trust([p], {p.player_id}, _rules())
-        assert p.manager_trust == 100.0
+        assert p.manager_trust == 1.0
 
     def test_trust_floor_at_0(self) -> None:
-        p = _make_player(manager_trust=0.5)
+        p = _make_player(manager_trust=0.005)
         update_manager_trust([p], set(), _rules())
         assert p.manager_trust == 0.0
 

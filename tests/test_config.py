@@ -40,8 +40,8 @@ def _make_config_dir(
             base_fatigue_recovery = 0.03
             tactical_understanding_gain = 0.04
             fatigue_penalty_weight = 0.5
-            trust_increase_on_start = 2.0
-            trust_decrease_on_bench = 1.0
+            trust_increase_on_start = 0.02
+            trust_decrease_on_bench = 0.01
             home_advantage_factor = 1.1
         """
     _write_toml(config_dir / "adaptation.toml", adaptation)
@@ -52,7 +52,7 @@ def _make_config_dir(
             bench_streak_threshold = 3
             tactical_understanding_low = 0.40
             short_term_window = 4
-            trust_low = 40.0
+            trust_low = 0.40
 
             [manager]
             job_security_warning = 0.30
@@ -137,7 +137,7 @@ class TestSimulationRulesLoadErrors:
             bench_streak_threshold = 3
             tactical_understanding_low = 0.40
             short_term_window = 4
-            trust_low = 40.0
+            trust_low = 0.40
             [manager]
             job_security_warning = 0.30
             job_security_critical = 0.10
@@ -185,8 +185,8 @@ class TestAdaptationConfigValidation:
                 base_fatigue_recovery=0.03,
                 tactical_understanding_gain=0.04,
                 fatigue_penalty_weight=0.5,
-                trust_increase_on_start=2.0,
-                trust_decrease_on_bench=1.0,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
                 home_advantage_factor=1.1,
             )
 
@@ -197,8 +197,8 @@ class TestAdaptationConfigValidation:
                 base_fatigue_recovery=-0.01,
                 tactical_understanding_gain=0.04,
                 fatigue_penalty_weight=0.5,
-                trust_increase_on_start=2.0,
-                trust_decrease_on_bench=1.0,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
                 home_advantage_factor=1.1,
             )
 
@@ -209,8 +209,8 @@ class TestAdaptationConfigValidation:
                 base_fatigue_recovery=0.03,
                 tactical_understanding_gain=-0.01,
                 fatigue_penalty_weight=0.5,
-                trust_increase_on_start=2.0,
-                trust_decrease_on_bench=1.0,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
                 home_advantage_factor=1.1,
             )
 
@@ -222,6 +222,7 @@ class TestAdaptationConfigValidation:
             fatigue_penalty_weight=0.0,
             trust_increase_on_start=0.0,
             trust_decrease_on_bench=0.0,
+
             home_advantage_factor=1.0,
         )
         assert config.base_fatigue_increase == 0.0
@@ -233,8 +234,8 @@ class TestAdaptationConfigValidation:
                 base_fatigue_recovery=0.03,
                 tactical_understanding_gain=0.04,
                 fatigue_penalty_weight=1.5,
-                trust_increase_on_start=2.0,
-                trust_decrease_on_bench=1.0,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
                 home_advantage_factor=1.1,
             )
 
@@ -258,7 +259,7 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=0,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             )
 
     def test_tactical_understanding_low_out_of_range(self) -> None:
@@ -267,7 +268,7 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=3,
                 tactical_understanding_low=1.5,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             )
 
     def test_short_term_window_zero(self) -> None:
@@ -276,7 +277,7 @@ class TestPlayerTurningPointValidation:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=0,
-                trust_low=40.0,
+                trust_low=0.40,
             )
 
     def test_negative_trust_low(self) -> None:

@@ -12,12 +12,12 @@ Expected goals formula:
                              * team.xg_against_per90
 
 agent_state_factor reflects the average condition of the starting XI:
-    avg_form    = mean(current_form for each starter) / 50.0
+    avg_form    = mean(current_form for each starter) / 0.5
     avg_fatigue = mean(fatigue for each starter)
     factor      = avg_form * (1.0 - avg_fatigue * fatigue_penalty_weight)
     clamped to [0.5, 1.5]
 
-The factor centres at 1.0 when all starters have neutral form (50.0) and
+The factor centres at 1.0 when all starters have neutral form (0.5) and
 zero fatigue. Higher form or lower fatigue increases expected goals;
 the reverse decreases them. Clamping prevents unrealistic extremes.
 
@@ -41,8 +41,8 @@ from iffootball.config import AdaptationConfig
 _STATE_FACTOR_MIN = 0.5
 _STATE_FACTOR_MAX = 1.5
 
-# Neutral current_form value (PlayerAgent default).
-_NEUTRAL_FORM = 50.0
+# Neutral current_form value (PlayerAgent default, 0.0-1.0 scale).
+_NEUTRAL_FORM = 0.5
 
 
 @dataclass(frozen=True)

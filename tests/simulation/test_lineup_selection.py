@@ -33,8 +33,8 @@ def _rules() -> SimulationRules:
             base_fatigue_recovery=0.03,
             tactical_understanding_gain=0.04,
             fatigue_penalty_weight=0.5,
-            trust_increase_on_start=2.0,
-            trust_decrease_on_bench=1.0,
+            trust_increase_on_start=0.02,
+            trust_decrease_on_bench=0.01,
             home_advantage_factor=1.1,
         ),
         turning_points=TurningPointConfig(
@@ -42,7 +42,7 @@ def _rules() -> SimulationRules:
                 bench_streak_threshold=3,
                 tactical_understanding_low=0.40,
                 short_term_window=4,
-                trust_low=40.0,
+                trust_low=0.40,
             ),
             manager=ManagerTurningPointConfig(
                 job_security_warning=0.30,
@@ -93,10 +93,10 @@ def _make_player(
     broad_position: BroadPosition,
     pressing: float = 50.0,
     passing: float = 50.0,
-    current_form: float = 50.0,
+    current_form: float = 0.5,
     fatigue: float = 0.0,
-    manager_trust: float = 50.0,
-    tactical_understanding: float = 50.0,
+    manager_trust: float = 0.5,
+    tactical_understanding: float = 0.5,
     bench_streak: int = 0,
 ) -> PlayerAgent:
     return PlayerAgent(
@@ -199,11 +199,11 @@ class TestCalcSelectionScore:
     def test_higher_form_higher_score(self) -> None:
         low = _make_player(
             1, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            current_form=30.0,
+            current_form=0.3,
         )
         high = _make_player(
             2, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            current_form=80.0,
+            current_form=0.8,
         )
         rules = _rules()
         mgr = _manager()
@@ -230,7 +230,7 @@ class TestCalcSelectionScore:
         """Low tactical_understanding should reduce score in short-term window."""
         player = _make_player(
             1, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            tactical_understanding=20.0,  # below 0.40 * 100 = 40
+            tactical_understanding=0.20,  # below 0.40
         )
         rules = _rules()
         mgr = _manager()
@@ -244,7 +244,7 @@ class TestCalcSelectionScore:
         """matches_since_appointment=None means no penalty."""
         player = _make_player(
             1, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            tactical_understanding=20.0,
+            tactical_understanding=0.20,
         )
         rules = _rules()
         mgr = _manager()
@@ -256,7 +256,7 @@ class TestCalcSelectionScore:
         """No penalty when tactical_understanding >= threshold."""
         player = _make_player(
             1, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            tactical_understanding=50.0,  # above 0.40 * 100 = 40
+            tactical_understanding=0.50,  # above 0.40
         )
         rules = _rules()
         mgr = _manager()
@@ -312,11 +312,11 @@ class TestSelectLineup:
         """A high-form player should be preferred in the same position."""
         low_form = _make_player(
             1, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            current_form=20.0,
+            current_form=0.2,
         )
         high_form = _make_player(
             2, "Center Forward", RoleFamily.FORWARD, BroadPosition.FW,
-            current_form=90.0,
+            current_form=0.9,
         )
         # Build a minimal squad: 1 GK, 4 DF, 3 MF, 2 FW
         squad = [

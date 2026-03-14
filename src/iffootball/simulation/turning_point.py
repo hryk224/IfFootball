@@ -121,8 +121,7 @@ def detect_player_turning_points(
         "low_understanding": tactical_understanding below threshold
                              AND within short_term_window of appointment
 
-    Note: tactical_understanding threshold is converted from 0.0-1.0
-    config scale to 0-100 PlayerAgent scale.
+    All values are on 0.0-1.0 scale.
     """
     tp_config = rules.turning_points.player
     tps: list[str] = []
@@ -132,8 +131,7 @@ def detect_player_turning_points(
 
     if context.matches_since_appointment is not None:
         if context.matches_since_appointment <= tp_config.short_term_window:
-            threshold = tp_config.tactical_understanding_low * 100.0
-            if player.tactical_understanding < threshold:
+            if player.tactical_understanding < tp_config.tactical_understanding_low:
                 tps.append("low_understanding")
 
     return tps
