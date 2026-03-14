@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iffootball"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "statsbombpy==1.17.0",
+    "pandas==3.0.1",
+    "numpy==2.4.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.2",
+    "ruff==0.9.9",
+    "mypy==1.19.1",
+    "pandas-stubs==3.0.0.260204",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iffootball"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = ["src"]
+strict = true
