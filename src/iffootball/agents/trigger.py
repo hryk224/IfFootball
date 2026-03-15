@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from iffootball.agents.manager import ManagerAgent
+    from iffootball.agents.player import PlayerAgent
 
 
 class TriggerType(str, Enum):
@@ -93,12 +94,17 @@ class TransferInTrigger:
             "squad"    — depth signing, available as backup.
         applied_at: Match week after which the player is available.
             Player can be selected from applied_at + 1.
+        player: Optional PlayerAgent for the incoming player. When
+            provided, the player is added to the squad on trigger
+            execution. When None, the trigger is queued but execution
+            raises ValueError (player must be resolved before simulation).
         trigger_type: Fixed to PLAYER_TRANSFER_IN. Not settable via __init__.
     """
 
     player_name: str
     expected_role: str  # "starter" | "rotation" | "squad"
     applied_at: int
+    player: PlayerAgent | None = None
 
     trigger_type: TriggerType = field(
         default=TriggerType.PLAYER_TRANSFER_IN,

@@ -23,8 +23,9 @@ Trigger timing:
     applies the trigger, and removes it from the queue.
 
 TransferInTrigger:
-    Not supported in M2. Raises NotImplementedError if encountered.
-    ManagerChangeTrigger is the only supported trigger type.
+    Adds the incoming player to the squad with role-appropriate initial
+    trust and low tactical understanding. Requires trigger.player to be
+    a resolved PlayerAgent (raises ValueError if None).
 """
 
 from __future__ import annotations
@@ -129,17 +130,8 @@ class Simulation:
         """Queue a trigger for application during run().
 
         The trigger takes effect at week trigger.applied_at + 1.
-        ManagerChangeTrigger is supported; TransferInTrigger raises
-        NotImplementedError.
-
-        Raises:
-            NotImplementedError: if trigger is a TransferInTrigger.
+        Both ManagerChangeTrigger and TransferInTrigger are supported.
         """
-        if isinstance(trigger, TransferInTrigger):
-            raise NotImplementedError(
-                "TransferInTrigger is not supported in M2. "
-                "Only ManagerChangeTrigger is implemented."
-            )
         self._triggers.append(trigger)
 
     def run(self) -> SimulationResult:
@@ -236,6 +228,13 @@ class Simulation:
                 remaining.append(trigger)
         self._triggers = remaining
 
+    # Initial manager_trust by expected_role for transfer signings.
+    _TRANSFER_TRUST: dict[str, float] = {
+        "starter": 0.7,
+        "rotation": 0.5,
+        "squad": 0.3,
+    }
+
     def _execute_trigger(self, trigger: ChangeTrigger) -> None:
         """Execute a single trigger's immediate effects.
 
@@ -253,6 +252,16 @@ class Simulation:
                 manager_name (from trigger.incoming_manager_name),
                 job_security (1.0), squad_trust ({}).
             Also resets squad tactical_understanding and manager_trust.
+
+        TransferInTrigger:
+            Adds the incoming player to the squad with role-appropriate
+            initial trust and low tactical understanding. Raises ValueError
+            if player is None or player_id already exists in squad.
+
+            Note: A/B comparison with TransferInTrigger produces unequal
+            squad compositions between branches. Downstream consumers
+            (e.g. player_impact ranking) that assume equal squad sizes
+            may need adjustment.
         """
         if isinstance(trigger, ManagerChangeTrigger):
             # Replace manager identity (trigger name is authoritative).
@@ -287,6 +296,33 @@ class Simulation:
             for p in self._squad:
                 p.tactical_understanding = 0.25  # low starting point
                 p.manager_trust = 0.5  # neutral
+
+        elif isinstance(trigger, TransferInTrigger):
+            if trigger.player is None:
+                raise ValueError(
+                    f"TransferInTrigger for '{trigger.player_name}' has no "
+                    f"player payload. Resolve the PlayerAgent before simulation."
+                )
+
+            # Check for duplicate player_id.
+            existing_ids = {p.player_id for p in self._squad}
+            if trigger.player.player_id in existing_ids:
+                raise ValueError(
+                    f"Player ID {trigger.player.player_id} already in squad."
+                )
+
+            # Copy to avoid mutating the trigger's payload (branch isolation).
+            player = copy.deepcopy(trigger.player)
+
+            # Set dynamic state for new signing.
+            player.tactical_understanding = 0.25  # new to the team
+            player.manager_trust = self._TRANSFER_TRUST.get(
+                trigger.expected_role, 0.5
+            )
+            player.bench_streak = 0
+            player.fatigue = 0.0  # fresh arrival
+
+            self._squad.append(player)
 
     def _process_player_turning_points(
         self,

@@ -262,16 +262,6 @@ class TestSimulationTrigger:
         result = sim.run()
         assert result.final_manager.manager_name == "Original Manager"
 
-    def test_transfer_trigger_raises(self) -> None:
-        sim = _make_simulation()
-        trigger = TransferInTrigger(
-            player_name="New Player",
-            expected_role="starter",
-            applied_at=10,
-        )
-        with pytest.raises(NotImplementedError):
-            sim.apply_trigger(trigger)
-
     def test_manager_change_resets_understanding(self) -> None:
         sim = _make_simulation()
         trigger = ManagerChangeTrigger(
@@ -427,6 +417,161 @@ class TestManagerChangeWithProfile:
         assert mgr.possession_preference == 0.5
         assert mgr.preferred_formation == "4-4-2"
         assert mgr.youth_development == 50.0
+
+
+def _make_transfer_player() -> PlayerAgent:
+    """Build a PlayerAgent for transfer trigger tests."""
+    return PlayerAgent(
+        player_id=99,
+        player_name="Transfer Player",
+        position_name="Center Forward",
+        role_family=RoleFamily.FORWARD,
+        broad_position=BroadPosition.FW,
+        pace=70.0,
+        passing=60.0,
+        shooting=75.0,
+        pressing=50.0,
+        defending=30.0,
+        physicality=65.0,
+        consistency=60.0,
+    )
+
+
+class TestTransferInTrigger:
+    """Tests for TransferInTrigger execution."""
+
+    def test_player_added_to_squad(self) -> None:
+        sim = _make_simulation()
+        initial_size = len(sim._squad)
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        assert len(result.final_squad) == initial_size + 1
+
+    def test_starter_trust_high(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert len(added) == 1
+        assert added[0].manager_trust == 0.7
+
+    def test_rotation_trust_medium(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="rotation",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert added[0].manager_trust == 0.5
+
+    def test_squad_trust_low(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="squad",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert added[0].manager_trust == 0.3
+
+    def test_tactical_understanding_low(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert added[0].tactical_understanding == 0.25
+
+    def test_bench_streak_zero(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert added[0].bench_streak == 0
+
+    def test_fatigue_zero(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim._execute_trigger(trigger)
+        added = [p for p in sim._squad if p.player_id == 99]
+        assert added[0].fatigue == 0.0
+
+    def test_none_player_raises_value_error(self) -> None:
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Ghost Player",
+            expected_role="starter",
+            applied_at=10,
+            player=None,
+        )
+        with pytest.raises(ValueError, match="no player payload"):
+            sim._execute_trigger(trigger)
+
+    def test_duplicate_player_id_raises(self) -> None:
+        sim = _make_simulation()
+        # Player ID 1 already exists in squad.
+        duplicate_trigger = TransferInTrigger(
+            player_name="Duplicate",
+            expected_role="starter",
+            applied_at=10,
+            player=PlayerAgent(
+                player_id=1,
+                player_name="Duplicate",
+                position_name="Center Forward",
+                role_family=RoleFamily.FORWARD,
+                broad_position=BroadPosition.FW,
+                pace=50.0, passing=50.0, shooting=50.0,
+                pressing=50.0, defending=50.0, physicality=50.0,
+                consistency=50.0,
+            ),
+        )
+        with pytest.raises(ValueError, match="already in squad"):
+            sim._execute_trigger(duplicate_trigger)
+
+    def test_transfer_player_in_lineup_selection(self) -> None:
+        """High-trust starter transfer should appear in lineup."""
+        sim = _make_simulation()
+        trigger = TransferInTrigger(
+            player_name="Transfer Player",
+            expected_role="starter",
+            applied_at=10,
+            player=_make_transfer_player(),
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        # The transfer player should be in the final squad.
+        transfer_ids = [p.player_id for p in result.final_squad if p.player_id == 99]
+        assert len(transfer_ids) == 1
 
 
 class TestBranchIndependence:
