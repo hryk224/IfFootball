@@ -677,11 +677,9 @@ def _render_team_radar(
 ) -> None:
     """Display team radar chart."""
     st.header("Team Comparison")
-
     st.caption(
-        "Tactical estimate axes (PPDA, Possession, Prog Passes) use neutral "
-        "defaults for the incoming manager. StatsBomb data for the incoming "
-        "manager is not available in this version."
+        "Detailed view for deeper analysis. "
+        "Tactical estimates use neutral defaults for the incoming manager."
     )
 
     radar_data = extract_radar_data(
@@ -788,7 +786,7 @@ def _render_report(
     Uses LLM-generated report when a client is available, otherwise
     falls back to a data-only structured report.
     """
-    st.header("Comparison Report")
+    st.header("Detailed Analysis")
 
     if params.trigger_type == "transfer_in":
         trigger_desc = (
@@ -844,33 +842,19 @@ def _render_report(
 
 
 def _render_data_report(report_input: ReportInput) -> None:
-    """Render a structured report from data without LLM."""
-    st.subheader("Summary")
-    st.write(
-        f"**Trigger:** {report_input.trigger_description}  \n"
-        f"**Runs:** {report_input.n_runs}  \n"
-        f"**Points impact:** {report_input.points_mean_diff:+.2f} "
-        f"(mean, B - A)"
-    )
+    """Render a structured report from data without LLM.
 
+    Summary and Player Impact are rendered separately above, so this
+    section covers Key Differences, Causal Chain, and Limitations only.
+    """
     st.subheader("Key Differences")
     st.write(
-        f"- Mean points: Branch A = {report_input.points_mean_a:.1f}, "
-        f"Branch B = {report_input.points_mean_b:.1f} "
+        f"- Mean points: no change = {report_input.points_mean_a:.1f}, "
+        f"with change = {report_input.points_mean_b:.1f} "
         f"(diff: {report_input.points_mean_diff:+.1f}) [fact]"
     )
     for event_type, diff in report_input.cascade_count_diff.items():
         st.write(f"- {event_type}: {diff:+.2f} per run [fact]")
-
-    if report_input.player_impacts:
-        st.subheader("Player Impact")
-        for p in report_input.player_impacts:
-            st.write(
-                f"- **{p.player_name}** (impact: {p.impact_score:.3f}): "
-                f"form {p.form_diff:+.2f}, fatigue {p.fatigue_diff:+.2f}, "
-                f"understanding {p.understanding_diff:+.2f}, "
-                f"trust {p.trust_diff:+.2f} [fact]"
-            )
 
     st.subheader("Causal Chain")
     if report_input.action_explanations:
