@@ -1,0 +1,266 @@
+{
+  "scenario": {
+    "trigger_type": "manager_change",
+    "team_name": "Manchester United",
+    "detail": {
+      "outgoing_manager": "Louis van Gaal",
+      "incoming_manager": "José Mourinho"
+    }
+  },
+  "highlights": [
+    {
+      "metric_name": "total_points_mean",
+      "value_a": 12.2,
+      "value_b": 14.3,
+      "diff": 2.1,
+      "interpretations": [
+        {
+          "statement": "Mean total points increased by 2.1 across remaining fixtures under the new manager.",
+          "label": "data",
+          "source": "simulation_output"
+        }
+      ]
+    },
+    {
+      "metric_name": "tactical_confusion",
+      "value_a": 10.2,
+      "value_b": 45.5,
+      "diff": 35.3,
+      "interpretations": [
+        {
+          "statement": "Tactical confusion events increased substantially, reflecting the adjustment period to new tactical demands.",
+          "label": "data",
+          "source": "simulation_output"
+        },
+        {
+          "statement": "The magnitude of the increase suggests a significant tactical philosophy shift from possession-based to counter-attacking.",
+          "label": "analysis",
+          "source": "rule_based_model"
+        }
+      ]
+    },
+    {
+      "metric_name": "adaptation_progress",
+      "value_a": 5.0,
+      "value_b": 29.0,
+      "diff": 24.0,
+      "interpretations": [
+        {
+          "statement": "Adaptation events increased by 24.0 per run, indicating active adjustment to the new system.",
+          "label": "data",
+          "source": "simulation_output"
+        }
+      ]
+    },
+    {
+      "metric_name": "form_drop",
+      "value_a": 3.1,
+      "value_b": 11.5,
+      "diff": 8.4,
+      "interpretations": [
+        {
+          "statement": "Form drop events increased by 8.4 per run during the transition period.",
+          "label": "data",
+          "source": "simulation_output"
+        }
+      ]
+    }
+  ],
+  "causal_chain": [
+    {
+      "step_id": "cs-001",
+      "cause": "New manager imposed higher pressing intensity and counter-attacking preference",
+      "effect": "Squad-wide tactical understanding reset triggered confusion for players trained in possession-based system",
+      "affected_agent": "Juan Mata",
+      "event_type": "tactical_confusion",
+      "evidence": [
+        {
+          "statement": "Tactical understanding dropped as the new system diverges significantly from the previous manager's approach.",
+          "label": "data",
+          "source": "simulation_output"
+        }
+      ],
+      "depth": 1
+    },
+    {
+      "step_id": "cs-002",
+      "cause": "Tactical confusion reduced match readiness for possession-oriented players",
+      "effect": "Form declined for players whose skill set does not match the new pressing demands",
+      "affected_agent": "Juan Mata",
+      "event_type": "form_drop",
+      "evidence": [
+        {
+          "statement": "Form decreased by 0.11 as the player struggled to adapt to the new system's physical demands.",
+          "label": "analysis",
+          "source": "rule_based_model"
+        }
+      ],
+      "depth": 2
+    },
+    {
+      "step_id": "cs-003",
+      "cause": "New manager's emphasis on physicality shifted selection criteria",
+      "effect": "Trust increased for players matching the new manager's preferred profile",
+      "affected_agent": "Ander Herrera",
+      "event_type": "adaptation_progress",
+      "evidence": [
+        {
+          "statement": "Trust increased by 0.12, suggesting alignment with the new tactical approach.",
+          "label": "analysis",
+          "source": "rule_based_model"
+        }
+      ],
+      "depth": 1
+    },
+    {
+      "step_id": "cs-004",
+      "cause": "Prolonged tactical confusion and form decline reduced match involvement",
+      "effect": "Playing time opportunities decreased as the player fell in the selection pecking order",
+      "affected_agent": "Morgan Schneiderlin",
+      "event_type": "trust_decline",
+      "evidence": [
+        {
+          "statement": "Form dropped by 0.13 and trust declined by 0.04, pushing the player down the selection hierarchy.",
+          "label": "hypothesis",
+          "source": "rule_based_model"
+        }
+      ],
+      "depth": 3
+    }
+  ],
+  "player_impacts": [
+    {
+      "player_name": "Juan Mata",
+      "impact_score": 0.412,
+      "changes": [
+        {
+          "axis": "form",
+          "diff": -0.11,
+          "interpretation": {
+            "statement": "Form declined as the player's technical, possession-oriented profile clashed with the new pressing system.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "fatigue",
+          "diff": -0.04,
+          "interpretation": {
+            "statement": "Slight fatigue reduction, likely due to reduced playing time under the new system.",
+            "label": "analysis",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "understanding",
+          "diff": -0.25,
+          "interpretation": {
+            "statement": "Tactical understanding reset due to managerial change. This is a model-wide effect applied to all players.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "trust",
+          "diff": -0.08,
+          "interpretation": {
+            "statement": "Manager trust declined, suggesting the player's profile is not a natural fit for the new system.",
+            "label": "analysis",
+            "source": "rule_based_model"
+          }
+        }
+      ],
+      "related_step_ids": ["cs-001", "cs-002"]
+    },
+    {
+      "player_name": "Ander Herrera",
+      "impact_score": 0.355,
+      "changes": [
+        {
+          "axis": "form",
+          "diff": 0.03,
+          "interpretation": {
+            "statement": "Slight form improvement as the player's work rate aligns with the new pressing demands.",
+            "label": "analysis",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "fatigue",
+          "diff": 0.08,
+          "interpretation": {
+            "statement": "Fatigue increased due to higher pressing intensity and increased playing time.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "understanding",
+          "diff": -0.25,
+          "interpretation": {
+            "statement": "Tactical understanding reset due to managerial change. Model-wide effect.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "trust",
+          "diff": 0.12,
+          "interpretation": {
+            "statement": "Trust increased significantly, indicating the new manager values the player's energy and defensive contribution.",
+            "label": "analysis",
+            "source": "rule_based_model"
+          }
+        }
+      ],
+      "related_step_ids": ["cs-003"]
+    },
+    {
+      "player_name": "Morgan Schneiderlin",
+      "impact_score": 0.331,
+      "changes": [
+        {
+          "axis": "form",
+          "diff": -0.13,
+          "interpretation": {
+            "statement": "Form dropped as the player's role became less defined in the new tactical setup.",
+            "label": "analysis",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "fatigue",
+          "diff": 0.01,
+          "interpretation": {
+            "statement": "Negligible fatigue change.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "understanding",
+          "diff": -0.25,
+          "interpretation": {
+            "statement": "Tactical understanding reset due to managerial change. Model-wide effect.",
+            "label": "data",
+            "source": "simulation_output"
+          }
+        },
+        {
+          "axis": "trust",
+          "diff": -0.04,
+          "interpretation": {
+            "statement": "Trust declined slightly, suggesting marginal status under the new manager.",
+            "label": "analysis",
+            "source": "rule_based_model"
+          }
+        }
+      ],
+      "related_step_ids": ["cs-004"]
+    }
+  ],
+  "confidence_notes": [
+    "Causal chain reaches depth 3; effects beyond depth 2 carry increasing uncertainty.",
+    "50% of evidence relies on rule-based models rather than direct simulation output."
+  ]
+}
