@@ -1,5 +1,39 @@
 # Changelog
 
+## Live Demo
+
+Deployed the IfFootball Live Demo to Streamlit Community Cloud with guided scenario UI, LLM report generation, and Japanese language support.
+
+**Live Demo:** https://iffootball-bfmlfowrz7fxf8j4fkuuqv.streamlit.app/
+
+### Added
+
+- Guided scenario UI with 3 preset cards (Van Gaal→Mourinho, Van Gaal→Klopp, Mourinho→Ranieri) and Custom scenario expander
+- Candidate resolver (`candidates.py`) with week-aware manager lookup and cross-league support
+- Per-scenario demo cache (`data/demo_cache/{team}_w{week}.db`) for instant startup on Streamlit Cloud
+- Session state caching to prevent re-simulation on Streamlit rerun
+- Summary card with headline, metrics, and points definition caption
+- Player Impact with direction arrows (▲/▼/─), one-line reasons, and horizontal radar layout
+- Japanese report generation prompt (`report_generation_ja_v1.md`) and Report Language selector
+- Groq provider verified at 1.8s/en and 2.5s/ja report generation
+- Per-provider model env vars (OPENAI_MODEL, ANTHROPIC_MODEL, GEMINI_MODEL, GROQ_MODEL); removed shared LLM_MODEL
+- Streamlit Cloud secrets bridge for LLM provider resolution
+- Post-process quality checks (player value validation, dangling sentence detection — warning-only)
+- Demo screenshots in README
+
+### Changed
+
+- Output order: Summary → Player Impact → Detailed Analysis → Team Comparison (conclusion first)
+- Report sections deduplicated: Summary shown at page top only, not repeated in Detailed Analysis
+- Label system renamed from `fact` to `data` across all prompts, code, and documentation
+- Radar chart figures shrunk to (4,4) with unified fonts and legend sizing
+- Team Comparison centered at 1/3 page width
+- Competition labels human-readable (Premier League 2015-16)
+- Runs/Seed moved to Advanced Settings expander
+- Report prompts hardened: sign convention, event name formatting, proper noun preservation, all-player coverage, causal chain flow, sentence completion rules
+
+---
+
 ## OSS Release Preparation
 
 Prepared the project for public release with documentation, safety checks, schema hardening, and UX improvements.
