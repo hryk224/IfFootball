@@ -34,6 +34,7 @@ from iffootball.llm.report_generation import (
     generate_report,
 )
 from iffootball.pipeline import InitializationResult, initialize
+from iffootball.storage.db import Database
 from iffootball.simulation.comparison import ComparisonResult, run_comparison
 from iffootball.simulation.turning_point import RuleBasedHandler
 from iffootball.visualization.player_impact import PlayerImpact, rank_player_impact
@@ -48,6 +49,7 @@ from iffootball.visualization.radar_data import extract_radar_data
 _CONFIG_DIR = Path(__file__).parent / "config"
 _RULES_DIR = _CONFIG_DIR / "simulation_rules"
 _TARGETS_PATH = _CONFIG_DIR / "targets.toml"
+_CACHE_DIR = Path(__file__).parent / "data" / "demo_cache"
 
 _DEFAULT_N_RUNS = 10
 _DEFAULT_SEED = 42
@@ -294,6 +296,93 @@ def _render_sidebar() -> SimulationParams | None:
 
 
 # ---------------------------------------------------------------------------
+# Cache loading
+# ---------------------------------------------------------------------------
+
+
+def _team_cache_path(team_name: str) -> Path:
+    """Return the per-team cache DB path."""
+    safe_name = team_name.replace(" ", "_").lower()
+    return _CACHE_DIR / f"{safe_name}.db"
+
+
+def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
+    """Try to load initialization data from per-team demo cache DB.
+
+    Returns None if cache doesn't exist or required data is missing.
+    Manager is resolved from the cached data (team-based), not from
+    user input, to avoid exact-name mismatch issues.
+    """
+    cache_path = _team_cache_path(params.team_name)
+    if not cache_path.exists():
+        return None
+
+    try:
+        db = Database(cache_path)
+    except Exception:
+        return None
+
+    try:
+        player_agents = db.load_player_agents(
+            params.competition_id, params.season_id
+        )
+        if not player_agents:
+            return None
+
+        team_baseline = db.load_team_baseline(
+            params.team_name, params.competition_id, params.season_id
+        )
+        if team_baseline is None:
+            return None
+
+        # Load manager by team name — cache stores the canonical manager.
+        # Try user-specified name first, then fall back to any cached manager.
+        manager_agent = db.load_manager_agent(
+            params.manager_name,
+            params.team_name,
+            params.competition_id,
+            params.season_id,
+        )
+        if manager_agent is None:
+            # Manager name mismatch — cache miss for this specific manager.
+            return None
+
+        fixture_list = db.load_fixture_list(
+            params.team_name,
+            params.competition_id,
+            params.season_id,
+            trigger_week=params.trigger_week,
+        )
+        if fixture_list is None:
+            return None
+
+        opponent_strengths = db.load_opponent_strengths(
+            params.competition_id, params.season_id, params.trigger_week
+        )
+        if not opponent_strengths:
+            return None
+
+        league_context = db.load_league_context(
+            params.competition_id, params.season_id
+        )
+        if league_context is None:
+            return None
+
+        return InitializationResult(
+            player_agents=player_agents,
+            team_baseline=team_baseline,
+            manager_agent=manager_agent,
+            fixture_list=fixture_list,
+            opponent_strengths=opponent_strengths,
+            league_context=league_context,
+        )
+    except Exception:
+        return None
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Pipeline execution
 # ---------------------------------------------------------------------------
 
@@ -302,21 +391,25 @@ def _run_pipeline(params: SimulationParams) -> None:
     """Execute the full pipeline and display results."""
     progress = st.progress(0, text="Initializing...")
 
-    # 1. Initialize agents from StatsBomb data.
-    collector = StatsBombOpenDataCollector()
-    try:
-        init_result = initialize(
-            collector=collector,
-            competition_id=params.competition_id,
-            season_id=params.season_id,
-            team_name=params.team_name,
-            manager_name=params.manager_name,
-            trigger_week=params.trigger_week,
-            league_name=f"Competition {params.competition_id}",
-        )
-    except Exception as e:
-        st.error(f"Initialization failed: {e}")
-        return
+    # 1. Initialize agents (try cache first, then StatsBomb API).
+    init_result = _load_from_cache(params)
+    if init_result is not None:
+        st.caption("Loaded from demo cache.")
+    else:
+        collector = StatsBombOpenDataCollector()
+        try:
+            init_result = initialize(
+                collector=collector,
+                competition_id=params.competition_id,
+                season_id=params.season_id,
+                team_name=params.team_name,
+                manager_name=params.manager_name,
+                trigger_week=params.trigger_week,
+                league_name=f"Competition {params.competition_id}",
+            )
+        except Exception as e:
+            st.error(f"Initialization failed: {e}")
+            return
 
     progress.progress(30, text="Running simulation...")
 

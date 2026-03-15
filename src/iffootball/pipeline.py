@@ -334,7 +334,7 @@ def initialize(
             tactical_complexity=chars.tactical_complexity,
         )
 
-    # -- 8. DB persistence (optional; LeagueContext not persisted) --
+    # -- 8. DB persistence (optional) --
     if db is not None:
         db.save_player_agents(player_agents, competition_id, season_id)
         db.save_team_baseline(team_baseline)
@@ -343,6 +343,7 @@ def initialize(
         db.save_opponent_strengths(
             opponent_strengths, competition_id, season_id, trigger_week,
         )
+        db.save_league_context(league_context)
 
     return InitializationResult(
         player_agents=player_agents,
