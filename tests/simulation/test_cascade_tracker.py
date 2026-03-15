@@ -212,6 +212,77 @@ class TestCascadeTrackerRecordChained:
         assert e4 is not None
         assert e4.depth == 4  # at limit, still recorded
 
+
+# ---------------------------------------------------------------------------
+# New M3 event types
+# ---------------------------------------------------------------------------
+
+
+class TestNewEventTypes:
+    def test_adaptation_progress_recorded(self) -> None:
+        tracker = CascadeTracker()
+        result = tracker.record(
+            week=3,
+            event_type="adaptation_progress",
+            affected_agent="Player A",
+            cause_chain=("low_understanding",),
+            magnitude=0.15,
+            depth=1,
+        )
+        assert result is not None
+        assert result.event_type == "adaptation_progress"
+
+    def test_tactical_confusion_recorded(self) -> None:
+        tracker = CascadeTracker()
+        result = tracker.record(
+            week=3,
+            event_type="tactical_confusion",
+            affected_agent="Player A",
+            cause_chain=("low_understanding",),
+            magnitude=0.2,
+            depth=1,
+        )
+        assert result is not None
+        assert result.event_type == "tactical_confusion"
+
+    def test_squad_unrest_recorded(self) -> None:
+        tracker = CascadeTracker()
+        result = tracker.record(
+            week=5,
+            event_type="squad_unrest",
+            affected_agent="Manager",
+            cause_chain=("multiple_resist",),
+            magnitude=0.5,
+            depth=1,
+        )
+        assert result is not None
+        assert result.event_type == "squad_unrest"
+        assert result.cause_chain == ("multiple_resist",)
+
+    def test_valid_event_types_includes_new_types(self) -> None:
+        assert "adaptation_progress" in VALID_EVENT_TYPES
+        assert "tactical_confusion" in VALID_EVENT_TYPES
+        assert "squad_unrest" in VALID_EVENT_TYPES
+
+
+class TestCascadeTrackerChainedFiltering:
+    def test_chain_beyond_depth_limit(self) -> None:
+        tracker = CascadeTracker(depth_limit=4)
+        e1 = tracker.record(
+            week=3,
+            event_type="playing_time_change",
+            affected_agent="P",
+            cause_chain=(),
+            magnitude=0.6,
+            depth=1,
+        )
+        assert e1 is not None
+        e2 = tracker.record_chained(e1, "trust_decline", "P", 0.4)
+        assert e2 is not None
+        e3 = tracker.record_chained(e2, "form_drop", "P", 0.2)
+        assert e3 is not None
+        e4 = tracker.record_chained(e3, "tactical_confusion", "P", 0.1)
+        assert e4 is not None
         e5 = tracker.record_chained(e4, "form_drop", "P", 0.1)
         assert e5 is None  # depth 5 > limit 4
 

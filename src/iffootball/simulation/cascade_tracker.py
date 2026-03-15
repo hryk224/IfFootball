@@ -17,13 +17,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# M2 minimum event type set. Extend as new event types are needed.
+# Event type vocabulary. Extend as new event types are needed.
 VALID_EVENT_TYPES: frozenset[str] = frozenset(
     {
+        # Player negative events
         "form_drop",
         "playing_time_change",
         "trust_decline",
         "tactical_confusion",
+        # Player positive events
+        "adaptation_progress",
+        # Squad-level events
+        "squad_unrest",
+        # Manager events
         "manager_tactical_shift",
         "manager_dismissal",
     }

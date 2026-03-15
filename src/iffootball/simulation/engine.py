@@ -331,6 +331,8 @@ class Simulation:
         week: int,
     ) -> None:
         """Detect player TPs, sample actions, apply effects, record events."""
+        resist_count = 0
+
         for player in self._squad:
             tps = detect_player_turning_points(
                 player, context, self._rules
@@ -341,8 +343,9 @@ class Simulation:
             dist = self._handler.handle(player, context)
             action = self._sample_action(dist)
 
-            # 10. Record cascade events and apply state effects.
+            # Record cascade events and apply state effects.
             if action == "resist":
+                resist_count += 1
                 # Form drops and trust declines.
                 player.current_form = max(0.0, player.current_form - 0.05)
                 player.manager_trust = max(0.0, player.manager_trust - 0.03)
@@ -371,7 +374,37 @@ class Simulation:
                     magnitude=0.4,
                     depth=1,
                 )
-            # "adapt" → no negative cascade (positive adaptation is the default)
+            elif action == "adapt":
+                # Record positive adaptation progress.
+                tracker.record(
+                    week=week,
+                    event_type="adaptation_progress",
+                    affected_agent=player.player_name,
+                    cause_chain=tuple(tps),
+                    magnitude=0.15,
+                    depth=1,
+                )
+                # Confusion alongside adaptation when understanding is low.
+                if "low_understanding" in tps:
+                    tracker.record(
+                        week=week,
+                        event_type="tactical_confusion",
+                        affected_agent=player.player_name,
+                        cause_chain=tuple(tps),
+                        magnitude=0.2,
+                        depth=1,
+                    )
+
+        # Squad-level: unrest when multiple players resist in the same week.
+        if resist_count >= 2:
+            tracker.record(
+                week=week,
+                event_type="squad_unrest",
+                affected_agent=self._manager.manager_name,
+                cause_chain=("multiple_resist",),
+                magnitude=0.5,
+                depth=1,
+            )
 
     def _process_manager_turning_points(
         self,

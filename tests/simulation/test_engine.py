@@ -580,6 +580,88 @@ class TestTransferInTrigger:
         assert len(transfer_ids) == 1
 
 
+class TestCascadeEventEmission:
+    """Tests that engine emits the expected cascade event types."""
+
+    def test_adapt_emits_adaptation_progress(self) -> None:
+        """When a TP fires and adapt is sampled, adaptation_progress is recorded."""
+        sim = _make_simulation(seed=42)
+        # Manager change triggers low_understanding TPs → adapt likely.
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        event_types = {e.event_type for e in result.cascade_events}
+        # With a manager change, at least some players should adapt.
+        assert "adaptation_progress" in event_types
+
+    def test_low_understanding_adapt_emits_tactical_confusion(self) -> None:
+        """adapt + low_understanding TP → both adaptation_progress and tactical_confusion."""
+        sim = _make_simulation(seed=42)
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        event_types = {e.event_type for e in result.cascade_events}
+        # low_understanding fires in the short_term_window after appointment.
+        assert "tactical_confusion" in event_types
+
+    def test_multiple_resist_emits_squad_unrest(self) -> None:
+        """When 2+ players resist in the same week, squad_unrest is recorded."""
+        from iffootball.simulation.cascade_tracker import CascadeTracker
+        from iffootball.simulation.turning_point import SimContext
+
+        sim = _make_simulation(seed=0)
+        # Force conditions: manager change + low trust + high bench_streak
+        # so that bench_streak TP fires and resist is heavily favoured.
+        sim._matches_since_appointment = 1
+        for p in sim._squad:
+            p.bench_streak = 5
+            p.manager_trust = 0.1
+
+        context = SimContext(
+            current_week=11,
+            matches_since_appointment=1,
+            manager=sim._manager,
+            recent_points=(0, 0, 0),
+        )
+        # seed=0 deterministically produces 6 resists → squad_unrest.
+        sim._rng = np.random.default_rng(0)
+        tracker = CascadeTracker()
+        sim._process_player_turning_points(context, tracker, 11)
+        unrest = [e for e in tracker.events if e.event_type == "squad_unrest"]
+        assert len(unrest) == 1
+        assert unrest[0].cause_chain == ("multiple_resist",)
+        assert unrest[0].affected_agent == sim._manager.manager_name
+
+    def test_resist_emits_form_drop_and_trust_decline(self) -> None:
+        """Existing behavior: resist → form_drop + trust_decline chain."""
+        # Run across seeds to find one with a resist action.
+        for seed in range(50):
+            sim = _make_simulation(seed=seed)
+            trigger = ManagerChangeTrigger(
+                outgoing_manager_name="Original Manager",
+                incoming_manager_name="New Manager",
+                transition_type="mid_season",
+                applied_at=10,
+            )
+            sim.apply_trigger(trigger)
+            result = sim.run()
+            event_types = {e.event_type for e in result.cascade_events}
+            if "form_drop" in event_types:
+                assert "trust_decline" in event_types
+                return
+        pytest.fail("No form_drop event found across 50 seeds")
+
+
 class TestBranchIndependence:
     def test_branches_do_not_share_state(self) -> None:
         """Two simulations from deepcopied inputs should diverge."""
