@@ -36,8 +36,8 @@ _BRANCH_A_ALPHA = 0.25
 _BRANCH_B_ALPHA = 0.25
 _LINE_WIDTH = 2.0
 _FIGURE_SIZE = (4, 4)
-_TITLE_FONTSIZE = 14
-_LABEL_FONTSIZE = 10
+_TITLE_FONTSIZE = 10
+_LABEL_FONTSIZE = 8
 
 
 def create_radar_figure(
@@ -75,7 +75,7 @@ def create_radar_figure(
         values_a,
         color=_BRANCH_A_COLOR,
         linewidth=_LINE_WIDTH,
-        label="Branch A (no change)",
+        label="no change",
     )
     ax.fill(angles_closed, values_a, color=_BRANCH_A_COLOR, alpha=_BRANCH_A_ALPHA)
 
@@ -85,7 +85,7 @@ def create_radar_figure(
         values_b,
         color=_BRANCH_B_COLOR,
         linewidth=_LINE_WIDTH,
-        label="Branch B (with change)",
+        label="with change",
     )
     ax.fill(angles_closed, values_b, color=_BRANCH_B_COLOR, alpha=_BRANCH_B_ALPHA)
 
@@ -96,10 +96,10 @@ def create_radar_figure(
     # Radial ticks (0.0 to 1.0).
     ax.set_ylim(0, 1.0)
     ax.set_yticks([0.25, 0.5, 0.75, 1.0])
-    ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=8, alpha=0.6)
+    ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=6, alpha=0.6)
 
-    ax.set_title(title, fontsize=_TITLE_FONTSIZE, pad=20)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=9)
+    ax.set_title(title, fontsize=_TITLE_FONTSIZE, pad=15)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.05), fontsize=7)
 
     # Caption noting data source classification.
     fig.text(

@@ -89,7 +89,7 @@ def create_player_radar_figure(impact: PlayerImpact) -> Figure:
         values_a_closed,
         color=_BRANCH_A_COLOR,
         linewidth=_LINE_WIDTH,
-        label="Branch A (no change)",
+        label="no change",
     )
     ax.fill(angles_closed, values_a_closed, color=_BRANCH_A_COLOR, alpha=_FILL_ALPHA)
 
@@ -99,19 +99,19 @@ def create_player_radar_figure(impact: PlayerImpact) -> Figure:
         values_b_closed,
         color=_BRANCH_B_COLOR,
         linewidth=_LINE_WIDTH,
-        label="Branch B (with change)",
+        label="with change",
     )
     ax.fill(angles_closed, values_b_closed, color=_BRANCH_B_COLOR, alpha=_FILL_ALPHA)
 
     ax.set_xticks(angles)
-    ax.set_xticklabels(list(_AXIS_LABELS), fontsize=10)
+    ax.set_xticklabels(list(_AXIS_LABELS), fontsize=8)
     ax.set_ylim(0, 1.0)
     ax.set_yticks([0.25, 0.5, 0.75, 1.0])
-    ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=8, alpha=0.6)
+    ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=6, alpha=0.6)
 
     title = f"{impact.player_name} (impact: {impact.impact_score:.3f})"
-    ax.set_title(title, fontsize=12, pad=20)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=9)
+    ax.set_title(title, fontsize=10, pad=15)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.05), fontsize=7)
 
     fig.tight_layout()
     return fig
