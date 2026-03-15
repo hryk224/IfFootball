@@ -17,7 +17,7 @@ from iffootball.simulation.comparison import (
     ComparisonResult,
     DeltaMetrics,
 )
-from iffootball.storage.db import Database
+from iffootball.storage.db import Database, SchemaVersionError, _SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +139,64 @@ class TestDatabase:
         assert "opponent_strengths" in tables
         assert "fixture_lists" in tables
         assert "fixtures" in tables
+        assert "db_meta" in tables
+
+
+class TestSchemaVersion:
+    def test_new_db_gets_current_version(self, db: Database) -> None:
+        row = db._conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert row is not None
+        assert int(row["value"]) == _SCHEMA_VERSION
+
+    def test_reopening_same_version_succeeds(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.db"
+            db1 = Database(path)
+            db1.close()
+            # Reopen — should not raise.
+            db2 = Database(path)
+            db2.close()
+
+    def test_mismatched_version_raises(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.db"
+            db1 = Database(path)
+            # Tamper: set version to 999.
+            db1._conn.execute(
+                "UPDATE db_meta SET value = '999' WHERE key = 'schema_version'"
+            )
+            db1._conn.commit()
+            db1.close()
+            # Reopen — should raise.
+            with pytest.raises(SchemaVersionError, match="999"):
+                Database(path)
+
+    def test_legacy_db_with_data_raises(self) -> None:
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "legacy.db"
+            # Create a legacy DB: has tables and data but no db_meta.
+            conn = sqlite3.connect(str(path))
+            conn.execute(
+                "CREATE TABLE player_agents (player_id INTEGER PRIMARY KEY)"
+            )
+            conn.execute("INSERT INTO player_agents VALUES (1)")
+            conn.commit()
+            conn.close()
+            # Opening via Database should detect legacy and raise.
+            with pytest.raises(SchemaVersionError, match="Legacy"):
+                Database(path)
 
 
 # ---------------------------------------------------------------------------

@@ -109,10 +109,31 @@ class ComparisonResultWithMeta:
 
 
 # ---------------------------------------------------------------------------
+# Schema version
+# ---------------------------------------------------------------------------
+
+# Increment on ANY DDL change (table/column add, rename, remove).
+# Version history:
+#   1 — Initial schema (M1-M5: player_agents, team_baselines, manager_agents,
+#       opponent_strengths, fixture_lists, fixtures, league_contexts,
+#       cascade_events, comparison_results with metadata columns)
+_SCHEMA_VERSION = 1
+
+
+class SchemaVersionError(Exception):
+    """Raised when the database schema version does not match the code."""
+
+
+# ---------------------------------------------------------------------------
 # DDL
 # ---------------------------------------------------------------------------
 
 _DDL = """
+CREATE TABLE IF NOT EXISTS db_meta (
+    key   TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS player_agents (
     player_id             INTEGER NOT NULL,
     competition_id        INTEGER NOT NULL,
@@ -352,10 +373,66 @@ class Database:
         self._conn = sqlite3.connect(str(path))
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
+        self._check_schema_version()
 
     def _create_tables(self) -> None:
         self._conn.executescript(_DDL)
         self._conn.commit()
+
+    def _check_schema_version(self) -> None:
+        """Verify or initialize the schema version.
+
+        - New DB (no version row): writes current _SCHEMA_VERSION.
+        - Existing DB with matching version: no-op.
+        - Existing DB with mismatched version: raises SchemaVersionError.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'schema_version'"
+        ).fetchone()
+
+        if row is None:
+            # Check if this is a truly new DB or a legacy DB without
+            # version tracking. Legacy DBs have tables but no db_meta row.
+            existing_tables = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT IN ('db_meta')"
+                ).fetchall()
+            }
+            # Empty tables = new DB (CREATE TABLE IF NOT EXISTS just ran).
+            # Non-empty tables with data = legacy DB.
+            has_data = False
+            for table in existing_tables:
+                count = self._conn.execute(
+                    f"SELECT COUNT(*) FROM [{table}]"  # noqa: S608
+                ).fetchone()[0]
+                if count > 0:
+                    has_data = True
+                    break
+
+            if has_data:
+                raise SchemaVersionError(
+                    "Legacy database detected (no schema_version but "
+                    "contains data). Delete the database file or migrate "
+                    "manually."
+                )
+
+            # Truly new DB — write current version.
+            self._conn.execute(
+                "INSERT INTO db_meta (key, value) VALUES ('schema_version', ?)",
+                (str(_SCHEMA_VERSION),),
+            )
+            self._conn.commit()
+            return
+
+        db_version = int(row["value"])
+        if db_version != _SCHEMA_VERSION:
+            raise SchemaVersionError(
+                f"Database schema version {db_version} does not match "
+                f"code version {_SCHEMA_VERSION}. "
+                f"Delete the database file or run a migration."
+            )
 
     def close(self) -> None:
         self._conn.close()
