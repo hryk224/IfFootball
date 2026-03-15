@@ -117,7 +117,7 @@ def _make_report_input() -> ReportInput:
                 confidence_note="",
             ),
         ],
-        limitations=list(DEFAULT_LIMITATIONS),
+        limitations=list(DEFAULT_LIMITATIONS["en"]),
     )
 
 
@@ -281,7 +281,7 @@ class TestGenerateReport:
 
     def test_fallback_has_all_required_sections(self) -> None:
         """The fallback report itself must contain all required sections."""
-        for heading in REQUIRED_SECTIONS:
+        for heading in REQUIRED_SECTIONS["en"]:
             assert heading in _FALLBACK_REPORT, f"Missing {heading} in fallback"
 
 
@@ -301,12 +301,14 @@ class TestReportInput:
         assert raised
 
     def test_default_limitations_available(self) -> None:
-        assert len(DEFAULT_LIMITATIONS) >= 3
+        assert len(DEFAULT_LIMITATIONS["en"]) >= 3
+        assert len(DEFAULT_LIMITATIONS["ja"]) >= 3
 
     def test_required_sections_defined(self) -> None:
-        assert len(REQUIRED_SECTIONS) == 5
-        assert "## Summary" in REQUIRED_SECTIONS
-        assert "## Limitations" in REQUIRED_SECTIONS
+        assert len(REQUIRED_SECTIONS["en"]) == 5
+        assert "## Summary" in REQUIRED_SECTIONS["en"]
+        assert "## Limitations" in REQUIRED_SECTIONS["en"]
+        assert len(REQUIRED_SECTIONS["ja"]) == 5
 
 
 class TestActionExplanationEntry:

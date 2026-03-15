@@ -30,14 +30,20 @@ from iffootball.llm.client import LLMClient
 # Prompt loading
 # ---------------------------------------------------------------------------
 
-_DEFAULT_PROMPT_PATH = (
-    Path(__file__).parents[3] / "prompts" / "report_generation_v1.md"
-)
+_PROMPT_DIR = Path(__file__).parents[3] / "prompts"
+
+_PROMPT_PATHS: dict[str, Path] = {
+    "en": _PROMPT_DIR / "report_generation_v1.md",
+    "ja": _PROMPT_DIR / "report_generation_ja_v1.md",
+}
 
 
-def _load_system_prompt(path: Path | None = None) -> str:
+def _load_system_prompt(path: Path | None = None, lang: str = "en") -> str:
     """Load system prompt from file. Raises FileNotFoundError if missing."""
-    resolved = path if path is not None else _DEFAULT_PROMPT_PATH
+    if path is not None:
+        resolved = path
+    else:
+        resolved = _PROMPT_PATHS.get(lang, _PROMPT_PATHS["en"])
     return resolved.read_text(encoding="utf-8")
 
 
@@ -45,45 +51,83 @@ def _load_system_prompt(path: Path | None = None) -> str:
 # Constants
 # ---------------------------------------------------------------------------
 
-# Required section headings in the generated report.
-REQUIRED_SECTIONS: tuple[str, ...] = (
-    "## Summary",
-    "## Key Differences",
-    "## Causal Chain",
-    "## Player Impact",
-    "## Limitations",
-)
+# Required section headings per language.
+REQUIRED_SECTIONS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "## Summary",
+        "## Key Differences",
+        "## Causal Chain",
+        "## Player Impact",
+        "## Limitations",
+    ),
+    "ja": (
+        "## サマリー",
+        "## 主な差分",
+        "## 因果連鎖",
+        "## 選手への影響",
+        "## 制約事項",
+    ),
+}
 
 # Default limitations describing known simulation constraints.
-DEFAULT_LIMITATIONS: tuple[str, ...] = (
-    "Match outcomes use a Poisson model with xG-based expected goals; "
-    "in-match events (shots, passes) are not simulated.",
-    "Tactical metrics (PPDA, possession, progressive passes) for the "
-    "incoming manager are estimates, not simulation outputs.",
-    "Player technical attributes are fixed throughout the simulation; "
-    "only dynamic state (form, fatigue, trust, understanding) changes.",
-    "The action distribution at turning points is rule-based (Phase 1); "
-    "LLM-based action selection is not yet implemented.",
-    "xGA/90 is a fixed baseline; the current model does not simulate "
-    "defensive impact of manager changes.",
-)
+DEFAULT_LIMITATIONS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "Match outcomes use a Poisson model with xG-based expected goals; "
+        "in-match events (shots, passes) are not simulated.",
+        "Tactical metrics (PPDA, possession, progressive passes) for the "
+        "incoming manager are estimates, not simulation outputs.",
+        "Player technical attributes are fixed throughout the simulation; "
+        "only dynamic state (form, fatigue, trust, understanding) changes.",
+        "The action distribution at turning points is rule-based; "
+        "LLM-based action selection is not yet implemented.",
+        "xGA/90 is a fixed baseline; the current model does not simulate "
+        "defensive impact of manager changes.",
+    ),
+    "ja": (
+        "試合結果は xG ベースの Poisson モデルで決定されます。"
+        "試合内イベント（シュート、パス）はシミュレートされません。",
+        "後任監督の戦術指標（PPDA、ポゼッション、プログレッシブパス）は "
+        "推定値であり、シミュレーション出力ではありません。",
+        "選手の技術属性はシミュレーション中固定です。"
+        "変化するのは動的状態（フォーム、疲労、信頼度、戦術理解度）のみです。",
+        "ターニングポイントでの行動分布はルールベースです。"
+        "LLM ベースの行動選択はまだ実装されていません。",
+        "xGA/90 は固定ベースラインです。現在のモデルは "
+        "監督交代による守備への影響をシミュレートしません。",
+    ),
+}
 
 # Default number of top impacted players to include.
 DEFAULT_TOP_PLAYERS = 3
 
 # Fallback report when LLM output is empty or unusable.
-_FALLBACK_REPORT = (
-    "## Summary\n\n"
-    "Unable to generate structured report.\n\n"
-    "## Key Differences\n\n"
-    "No data available.\n\n"
-    "## Causal Chain\n\n"
-    "No data available.\n\n"
-    "## Player Impact\n\n"
-    "No data available.\n\n"
-    "## Limitations\n\n"
-    "Report generation failed. Results may be incomplete."
-)
+_FALLBACK_REPORTS: dict[str, str] = {
+    "en": (
+        "## Summary\n\n"
+        "Unable to generate structured report.\n\n"
+        "## Key Differences\n\n"
+        "No data available.\n\n"
+        "## Causal Chain\n\n"
+        "No data available.\n\n"
+        "## Player Impact\n\n"
+        "No data available.\n\n"
+        "## Limitations\n\n"
+        "Report generation failed. Results may be incomplete."
+    ),
+    "ja": (
+        "## サマリー\n\n"
+        "構造化レポートを生成できませんでした。\n\n"
+        "## 主な差分\n\n"
+        "データがありません。\n\n"
+        "## 因果連鎖\n\n"
+        "データがありません。\n\n"
+        "## 選手への影響\n\n"
+        "データがありません。\n\n"
+        "## 制約事項\n\n"
+        "レポート生成に失敗しました。結果が不完全な可能性があります。"
+    ),
+}
+_FALLBACK_REPORT = _FALLBACK_REPORTS["en"]  # backward compat alias
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +219,7 @@ def generate_report(
     report_input: ReportInput,
     *,
     system_prompt: str | None = None,
+    lang: str = "en",
 ) -> str:
     """Generate a structured Markdown comparison report via LLM.
 
@@ -182,14 +227,19 @@ def generate_report(
         client:        LLMClient implementation.
         report_input:  Assembled report input data.
         system_prompt: Override the loaded system prompt (tests only).
+        lang:          Output language ("en" or "ja").
 
     Returns:
         Markdown string with all required sections. Falls back to a
         structured fallback report if the LLM output is empty or
         missing required section headings.
     """
+    fallback = _FALLBACK_REPORTS.get(lang, _FALLBACK_REPORT)
+
     prompt = (
-        system_prompt if system_prompt is not None else _load_system_prompt()
+        system_prompt
+        if system_prompt is not None
+        else _load_system_prompt(lang=lang)
     )
 
     payload = _build_payload(report_input)
@@ -202,12 +252,12 @@ def generate_report(
     raw = client.complete(messages)
 
     if not raw or not raw.strip():
-        return _FALLBACK_REPORT
+        return fallback
 
     report = raw.strip()
 
-    if not _has_required_sections(report):
-        return _FALLBACK_REPORT
+    if not _has_required_sections(report, lang=lang):
+        return fallback
 
     return report
 
@@ -254,9 +304,10 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
     }
 
 
-def _has_required_sections(report: str) -> bool:
+def _has_required_sections(report: str, lang: str = "en") -> bool:
     """Check that the report contains all required section headings."""
-    for heading in REQUIRED_SECTIONS:
+    sections = REQUIRED_SECTIONS.get(lang, REQUIRED_SECTIONS["en"])
+    for heading in sections:
         if heading not in report:
             return False
     return True

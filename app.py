@@ -224,6 +224,17 @@ def _render_input() -> SimulationParams | None:
             )
         )
 
+    # Report language selector.
+    report_lang = str(
+        st.sidebar.selectbox(
+            "Report Language",
+            options=["en", "ja"],
+            format_func=lambda x: {"en": "English", "ja": "日本語"}[x],
+        )
+        or "en"
+    )
+    st.session_state["_report_lang"] = report_lang
+
     # LLM status display.
     try:
         from iffootball.llm.providers import available_providers
@@ -821,7 +832,12 @@ def _render_report(
         n_runs=comparison.no_change.n_runs,
         player_impacts=player_entries,
         action_explanations=[],
-        limitations=list(DEFAULT_LIMITATIONS),
+        limitations=list(
+            DEFAULT_LIMITATIONS.get(
+                st.session_state.get("_report_lang", "en"),
+                DEFAULT_LIMITATIONS["en"],
+            )
+        ),
     )
 
     if llm_client is not None:
@@ -831,32 +847,38 @@ def _render_report(
             "Data handling follows the provider's policy."
         )
         try:
-            report_md = generate_report(llm_client, report_input)
+            report_lang = st.session_state.get("_report_lang", "en")
+            report_md = generate_report(
+                llm_client, report_input, lang=report_lang
+            )
             st.markdown(report_md)
             return
         except Exception:
             st.warning("LLM report generation failed. Falling back to data report.")
 
     # Fallback: data-only report.
-    _render_data_report(report_input)
+    report_lang = st.session_state.get("_report_lang", "en")
+    _render_data_report(report_input, lang=report_lang)
 
 
-def _render_data_report(report_input: ReportInput) -> None:
+def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
     """Render a structured report from data without LLM.
 
     Summary and Player Impact are rendered separately above, so this
     section covers Key Differences, Causal Chain, and Limitations only.
     """
-    st.subheader("Key Differences")
+    _L = _DATA_REPORT_LABELS.get(lang, _DATA_REPORT_LABELS["en"])
+
+    st.subheader(_L["key_differences"])
     st.write(
-        f"- Mean points: no change = {report_input.points_mean_a:.1f}, "
-        f"with change = {report_input.points_mean_b:.1f} "
-        f"(diff: {report_input.points_mean_diff:+.1f}) [fact]"
+        f"- {_L['mean_points']}: {_L['no_change']} = {report_input.points_mean_a:.1f}, "
+        f"{_L['with_change']} = {report_input.points_mean_b:.1f} "
+        f"(diff: {report_input.points_mean_diff:+.1f}) [{_L['fact']}]"
     )
     for event_type, diff in report_input.cascade_count_diff.items():
-        st.write(f"- {event_type}: {diff:+.2f} per run [fact]")
+        st.write(f"- {event_type}: {diff:+.2f} /run [{_L['fact']}]")
 
-    st.subheader("Causal Chain")
+    st.subheader(_L["causal_chain"])
     if report_input.action_explanations:
         for a in report_input.action_explanations:
             st.write(
@@ -864,21 +886,54 @@ def _render_data_report(report_input: ReportInput) -> None:
                 f"{a.explanation} [{a.label}]"
             )
     else:
-        # Data-driven summary from cascade event diff when LLM is unavailable.
         if report_input.cascade_count_diff:
-            st.write(
-                "Causal chain summary from cascade event frequencies "
-                "(LLM-based detailed analysis available with API key):"
-            )
+            st.write(_L["causal_chain_summary"])
             for et, diff in report_input.cascade_count_diff.items():
-                direction = "increased" if diff > 0 else "decreased"
-                st.write(f"- **{et}** {direction} by {abs(diff):.1f} per run [fact]")
+                direction = _L["increased"] if diff > 0 else _L["decreased"]
+                st.write(f"- **{et}** {direction} {abs(diff):.1f} /run [{_L['fact']}]")
         else:
-            st.write("No cascade events recorded in this simulation.")
+            st.write(_L["no_cascade"])
 
-    st.subheader("Limitations")
+    st.subheader(_L["limitations"])
     for limitation in report_input.limitations:
         st.write(f"- {limitation}")
+
+
+# Data-only report labels per language.
+_DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "key_differences": "Key Differences",
+        "mean_points": "Mean points",
+        "no_change": "no change",
+        "with_change": "with change",
+        "fact": "fact",
+        "causal_chain": "Causal Chain",
+        "causal_chain_summary": (
+            "Causal chain summary from cascade event frequencies "
+            "(LLM-based detailed analysis available with API key):"
+        ),
+        "increased": "increased by",
+        "decreased": "decreased by",
+        "no_cascade": "No cascade events recorded in this simulation.",
+        "limitations": "Limitations",
+    },
+    "ja": {
+        "key_differences": "主な差分",
+        "mean_points": "平均勝ち点",
+        "no_change": "変更なし",
+        "with_change": "変更あり",
+        "fact": "事実",
+        "causal_chain": "因果連鎖",
+        "causal_chain_summary": (
+            "カスケードイベント頻度からの因果連鎖サマリー"
+            "（API キー設定で LLM 詳細分析が利用可能）:"
+        ),
+        "increased": "増加",
+        "decreased": "減少",
+        "no_cascade": "このシミュレーションではカスケードイベントは記録されませんでした。",
+        "limitations": "制約事項",
+    },
+}
 
 
 # ---------------------------------------------------------------------------
