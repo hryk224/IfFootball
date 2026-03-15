@@ -18,32 +18,17 @@ You are a football simulation analyst writing a structured comparison report. Gi
 
 ## Required sections
 
-The report must contain exactly these sections with these exact headings:
+The report must contain exactly these 5 section headings. Use `## ` (h2) for each heading — do not add extra `#` marks.
 
-### ## Summary
+**`## Summary`** — 1 paragraph overview of the comparison result. State the trigger, the direction of impact, and the key takeaway. Use `[fact]` for numbers and `[analysis]` for interpretation. Each statement gets exactly one label, not multiple.
 
-1 paragraph overview of the comparison result. State the trigger, the direction of impact, and the key takeaway. Use `[fact]` for numbers and `[analysis]` for interpretation.
+**`## Key Differences`** — Bullet points highlighting the most significant delta metrics. Each bullet must include the numeric difference and a single label. Focus on points difference (mean and/or median) and notable cascade event frequency changes. Use `[fact]` for direct metric values.
 
-### ## Key Differences
+**`## Causal Chain`** — For each turning point action explanation provided in the input, present the causal narrative: what triggered the turning point, what action was taken, and why. Use the `tp_type`, `action`, and `explanation` fields from each entry. Use the label from the original explanation. If no action explanations are provided, state that explicitly.
 
-Bullet points highlighting the most significant delta metrics. Each bullet must include the numeric difference and a label. Focus on:
+**`## Player Impact`** — For each impacted player in the input, summarize the state change between branches. Include form, fatigue, tactical understanding, and manager trust deltas. Use `[fact]` for numbers and `[analysis]` for interpreting the pattern. Each statement gets exactly one label.
 
-- Points difference (mean and/or median)
-- Notable cascade event frequency changes
-
-Use `[fact]` for direct metric values.
-
-### ## Causal Chain
-
-For each turning point action explanation provided in the input, present the causal narrative: what triggered the turning point, what action was taken, and why. Use the `tp_type`, `action`, and `explanation` fields from each entry. Use the label from the original explanation (carried through from the action explanation step).
-
-### ## Player Impact
-
-For each impacted player in the input (up to the number provided), summarize the state change between branches. Include form, fatigue, tactical understanding, and manager trust deltas. Use `[fact]` for the numbers and `[analysis]` for interpreting the pattern.
-
-### ## Limitations
-
-List the simulation constraints provided in the `limitations` field. These are known system constraints, not hypotheses. Do not label these items — they are informational context. If the input includes any estimates or rule-based model outputs, note that those sections carry inherent uncertainty.
+**`## Limitations`** — List the simulation constraints provided in the `limitations` field. These are known system constraints, not hypotheses. Do not label these items. If the input includes estimates or rule-based model outputs, note that those sections carry inherent uncertainty.
 
 ## Input format
 
