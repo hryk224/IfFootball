@@ -184,24 +184,22 @@ class RuleBasedHandler:
     ) -> ActionDistribution:
         """Return an action distribution for the given player and context.
 
-        Decision logic:
-          1. bench_streak TP + low trust → resist-heavy
-          2. low_understanding TP → adapt-heavy (confusion but trying)
-          3. No TP → strong adapt (stable adaptation)
+        Decision logic (priority order):
+          1. bench_streak TP + low trust → bench_streak_low_trust distribution
+          2. low_understanding TP → low_understanding distribution
+          3. No TP or unmatched → default distribution
+
+        All distributions are loaded from config (action_distribution section
+        in turning_points.toml).
         """
         tps = detect_player_turning_points(agent, context, self._rules)
+        ad = self._rules.turning_points.action_distribution
 
         trust_low = self._rules.turning_points.player.trust_low
         if "bench_streak" in tps and agent.manager_trust < trust_low:
-            return ActionDistribution(
-                {"resist": 0.6, "adapt": 0.3, "transfer": 0.1}
-            )
+            return ActionDistribution(dict(ad.bench_streak_low_trust))
 
         if "low_understanding" in tps:
-            return ActionDistribution(
-                {"adapt": 0.5, "resist": 0.4, "transfer": 0.1}
-            )
+            return ActionDistribution(dict(ad.low_understanding))
 
-        return ActionDistribution(
-            {"adapt": 0.8, "resist": 0.2, "transfer": 0.0}
-        )
+        return ActionDistribution(dict(ad.default))

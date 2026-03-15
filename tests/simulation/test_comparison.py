@@ -10,6 +10,7 @@ from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.agents.team import TeamBaseline
 from iffootball.agents.trigger import ManagerChangeTrigger
 from iffootball.config import (
+    ActionDistributionConfig,
     AdaptationConfig,
     MatchConfig,
     ManagerTurningPointConfig,
@@ -64,6 +65,11 @@ def _rules() -> SimulationRules:
                 job_security_warning=0.30,
                 job_security_critical=0.10,
                 style_stubbornness_threshold=80,
+            ),
+            action_distribution=ActionDistributionConfig(
+                bench_streak_low_trust={"resist": 0.6, "adapt": 0.3, "transfer": 0.1},
+                low_understanding={"adapt": 0.5, "resist": 0.4, "transfer": 0.1},
+                default={"adapt": 0.8, "resist": 0.2, "transfer": 0.0},
             ),
         ),
         match=MatchConfig(home_advantage_factor=1.1),

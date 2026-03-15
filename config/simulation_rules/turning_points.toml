@@ -34,3 +34,25 @@ job_security_critical = 0.10
 # even when job_security drops below job_security_warning.
 # Scale: 0-100.
 style_stubbornness_threshold = 80
+
+[action_distribution]
+# Action probability distributions returned by RuleBasedHandler.
+# Each entry maps to a condition in handle() priority order:
+#   1. bench_streak_low_trust: bench_streak TP + trust below trust_low
+#   2. low_understanding:      low_understanding TP (early confusion)
+#   3. default:                no TP or unmatched condition
+
+[action_distribution.bench_streak_low_trust]
+resist = 0.6
+adapt = 0.3
+transfer = 0.1
+
+[action_distribution.low_understanding]
+adapt = 0.5
+resist = 0.4
+transfer = 0.1
+
+[action_distribution.default]
+adapt = 0.8
+resist = 0.2
+transfer = 0.0

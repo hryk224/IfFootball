@@ -204,11 +204,49 @@ class ManagerTurningPointConfig:
 
 
 @dataclass(frozen=True)
+class ActionDistributionConfig:
+    """Action probability distributions for RuleBasedHandler.
+
+    Each field is a dict[str, float] mapping action names to raw weights.
+    Normalisation is handled by ActionDistribution at construction time.
+
+    Attributes:
+        bench_streak_low_trust: Distribution when bench_streak TP fires
+                                 and manager_trust is below trust_low.
+        low_understanding:       Distribution when low_understanding TP fires.
+        default:                 Fallback distribution (no TP or unmatched).
+    """
+
+    bench_streak_low_trust: dict[str, float]
+    low_understanding: dict[str, float]
+    default: dict[str, float]
+
+    def __post_init__(self) -> None:
+        required_keys = {"adapt", "resist", "transfer"}
+        for name in ("bench_streak_low_trust", "low_understanding", "default"):
+            dist = getattr(self, name)
+            if set(dist) != required_keys:
+                raise ValueError(
+                    f"action_distribution.{name} must have exactly "
+                    f"{required_keys}, got {set(dist)}"
+                )
+            if any(v < 0 for v in dist.values()):
+                raise ValueError(
+                    f"action_distribution.{name} has negative values"
+                )
+            if sum(dist.values()) == 0:
+                raise ValueError(
+                    f"action_distribution.{name} has zero total"
+                )
+
+
+@dataclass(frozen=True)
 class TurningPointConfig:
     """Combined player and manager turning point thresholds."""
 
     player: PlayerTurningPointConfig
     manager: ManagerTurningPointConfig
+    action_distribution: ActionDistributionConfig
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +352,20 @@ def _load_turning_points(path: Path) -> TurningPointConfig:
         ),
     )
 
-    return TurningPointConfig(player=player, manager=manager)
+    ad_data = data["action_distribution"]
+
+    def _float_dict(d: dict[str, Any]) -> dict[str, float]:
+        return {str(k): float(v) for k, v in d.items()}
+
+    action_dist = ActionDistributionConfig(
+        bench_streak_low_trust=_float_dict(ad_data["bench_streak_low_trust"]),
+        low_understanding=_float_dict(ad_data["low_understanding"]),
+        default=_float_dict(ad_data["default"]),
+    )
+
+    return TurningPointConfig(
+        player=player, manager=manager, action_distribution=action_dist
+    )
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
