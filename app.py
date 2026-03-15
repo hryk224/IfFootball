@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from iffootball.agents.manager import ManagerAgent
+from iffootball.candidates import CandidateResolver
 from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
 from iffootball.agents.trigger import (
     ChangeTrigger,
@@ -103,6 +104,12 @@ _COMPETITION_NAMES: dict[int, str] = {
 _SEASON_NAMES: dict[int, str] = {
     27: "2015-16",
 }
+
+
+@st.cache_resource
+def _get_resolver() -> CandidateResolver:
+    """Create a cached CandidateResolver instance."""
+    return CandidateResolver(StatsBombOpenDataCollector())
 
 
 def _competition_label(target: dict[str, Any]) -> str:
@@ -255,8 +262,8 @@ def _render_input() -> SimulationParams | None:
     # --- Custom (experimental) ---
     with st.expander("Custom scenario (experimental)"):
         st.caption(
-            "Advanced: build your own scenario. Transfer triggers and "
-            "free-text manager names may not match cached data."
+            "Advanced: build your own scenario. Candidates are resolved "
+            "from StatsBomb data. Transfer triggers use neutral attributes."
         )
 
         targets = _load_targets()
@@ -270,18 +277,38 @@ def _render_input() -> SimulationParams | None:
             or 0
         )
         target = targets[selected_idx]
+        comp_id = int(target["competition_id"])
+        szn_id = int(target["season_id"])
 
+        # Resolve teams from targets.
         clubs: list[str] = target["clubs"]
         team_name = str(st.selectbox("Team", clubs) or clubs[0])
-
-        manager_name: str = st.text_input(
-            "Current Manager Name",
-            placeholder="e.g., Louis van Gaal",
-        )
 
         trigger_week: int = st.slider(
             "Trigger Week", min_value=1, max_value=38, value=10
         )
+
+        # Resolve current manager at the selected trigger_week.
+        resolver = _get_resolver()
+        canonical = resolver.manager_at_week(comp_id, szn_id, team_name, trigger_week)
+        team_managers = resolver.managers(
+            comp_id, szn_id, team_name, at_week=trigger_week
+        )
+        mgr_names = [c.manager_name for c in team_managers]
+        if mgr_names:
+            # Default to the canonical manager at that week.
+            default_idx = 0
+            if canonical and canonical.manager_name in mgr_names:
+                default_idx = mgr_names.index(canonical.manager_name)
+            manager_name = str(
+                st.selectbox("Current Manager", mgr_names, index=default_idx)
+                or mgr_names[0]
+            )
+        else:
+            manager_name = st.text_input(
+                "Current Manager Name",
+                placeholder="e.g., Louis van Gaal",
+            )
 
         trigger_type = str(
             st.radio(
@@ -300,10 +327,26 @@ def _render_input() -> SimulationParams | None:
         transfer_expected_role = "starter"
 
         if trigger_type == "manager_change":
-            incoming_manager_name = st.text_input(
-                "Incoming Manager Name",
-                placeholder="e.g., José Mourinho",
+            # Resolve incoming candidates (same league, exclude current team).
+            incoming_candidates = resolver.incoming_candidates(
+                comp_id, szn_id, exclude_team=team_name
             )
+            incoming_names = [
+                f"{c.manager_name} ({c.team_name})" for c in incoming_candidates
+            ]
+            if incoming_names:
+                selected_incoming = str(
+                    st.selectbox("Incoming Manager", incoming_names)
+                    or incoming_names[0]
+                )
+                # Extract manager name (before the parenthetical team name).
+                idx = incoming_names.index(selected_incoming)
+                incoming_manager_name = incoming_candidates[idx].manager_name
+            else:
+                incoming_manager_name = st.text_input(
+                    "Incoming Manager Name",
+                    placeholder="e.g., José Mourinho",
+                )
         else:
             transfer_player_name = st.text_input(
                 "Player Name",
@@ -329,8 +372,8 @@ def _render_input() -> SimulationParams | None:
                 return None
 
             return SimulationParams(
-                competition_id=int(target["competition_id"]),
-                season_id=int(target["season_id"]),
+                competition_id=comp_id,
+                season_id=szn_id,
                 team_name=team_name,
                 manager_name=manager_name.strip(),
                 trigger_week=trigger_week,
