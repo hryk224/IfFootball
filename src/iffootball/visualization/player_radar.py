@@ -38,7 +38,7 @@ _BRANCH_A_COLOR = "#2563eb"
 _BRANCH_B_COLOR = "#dc2626"
 _FILL_ALPHA = 0.25
 _LINE_WIDTH = 2.0
-_FIGURE_SIZE = (6, 6)
+_FIGURE_SIZE = (4, 4)
 
 
 def _extract_values(impact: PlayerImpact, branch: str) -> list[float]:

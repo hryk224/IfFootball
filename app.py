@@ -169,80 +169,42 @@ def _build_transfer_trigger(params: SimulationParams) -> TransferInTrigger:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar - Input
+# Preset scenarios
+# ---------------------------------------------------------------------------
+
+_PRESETS: list[dict[str, Any]] = [
+    {
+        "label": "Man United: Van Gaal → Mourinho",
+        "team_name": "Manchester United",
+        "manager_name": "Louis van Gaal",
+        "incoming_manager_name": "José Mario Felix dos Santos Mourinho",
+        "trigger_week": 29,
+    },
+    {
+        "label": "Man United: Van Gaal → Klopp",
+        "team_name": "Manchester United",
+        "manager_name": "Louis van Gaal",
+        "incoming_manager_name": "Jürgen Klopp",
+        "trigger_week": 29,
+    },
+    {
+        "label": "Chelsea: Mourinho → Ranieri",
+        "team_name": "Chelsea",
+        "manager_name": "José Mario Felix dos Santos Mourinho",
+        "incoming_manager_name": "Claudio Ranieri",
+        "trigger_week": 16,
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Input UI
 # ---------------------------------------------------------------------------
 
 
-def _render_sidebar() -> SimulationParams | None:
-    """Render sidebar inputs and return parameters on button press."""
-    st.sidebar.header("Simulation Parameters")
-
-    targets = _load_targets()
-    target_labels = [_competition_label(t) for t in targets]
-    selected_idx = int(
-        st.sidebar.selectbox(
-            "Competition / Season",
-            range(len(targets)),
-            format_func=lambda i: target_labels[i],
-        )
-        or 0
-    )
-    target = targets[selected_idx]
-
-    clubs: list[str] = target["clubs"]
-    team_name = str(st.sidebar.selectbox("Team", clubs) or clubs[0])
-
-    manager_name: str = st.sidebar.text_input(
-        "Current Manager Name",
-        placeholder="e.g., Erik ten Hag",
-    )
-
-    trigger_week: int = st.sidebar.slider(
-        "Trigger Week", min_value=1, max_value=38, value=10
-    )
-
-    st.sidebar.divider()
-    trigger_type = str(
-        st.sidebar.radio(
-            "Trigger Type",
-            options=["manager_change", "transfer_in"],
-            format_func=lambda x: {
-                "manager_change": "Manager Change",
-                "transfer_in": "Player Transfer (Experimental)",
-            }[x],
-        )
-        or "manager_change"
-    )
-
-    # Manager change fields.
-    incoming_manager_name = ""
-    transfer_player_name = ""
-    transfer_expected_role = "starter"
-
-    if trigger_type == "manager_change":
-        incoming_manager_name = st.sidebar.text_input(
-            "Incoming Manager Name",
-            placeholder="e.g., Jose Mourinho",
-        )
-    else:
-        st.sidebar.caption(
-            "Experimental: Transfer trigger adds a player with neutral "
-            "attributes (50th percentile). Squad composition differs between "
-            "branches, which may affect player impact rankings."
-        )
-        transfer_player_name = st.sidebar.text_input(
-            "Player Name",
-            placeholder="e.g., Kylian Mbappe",
-        )
-        transfer_expected_role = str(
-            st.sidebar.selectbox(
-                "Expected Role",
-                options=["starter", "rotation", "squad"],
-            )
-            or "starter"
-        )
-
-    # Advanced settings in a collapsible section.
+def _render_input() -> SimulationParams | None:
+    """Render guided scenario input and return parameters on selection."""
+    # --- Sidebar: Advanced Settings + LLM status ---
     with st.sidebar.expander("Advanced Settings"):
         n_runs = int(
             st.number_input(
@@ -267,30 +229,118 @@ def _render_sidebar() -> SimulationParams | None:
     except Exception:
         st.sidebar.info("LLM: not available")
 
-    if st.sidebar.button("Run Simulation", type="primary", use_container_width=True):
-        if not manager_name.strip():
-            st.sidebar.error("Current Manager Name is required.")
-            return None
-        if trigger_type == "manager_change" and not incoming_manager_name.strip():
-            st.sidebar.error("Incoming Manager Name is required.")
-            return None
-        if trigger_type == "transfer_in" and not transfer_player_name.strip():
-            st.sidebar.error("Player Name is required.")
-            return None
+    # --- Main area: Preset cards ---
+    st.subheader("What if...?")
+    st.caption("Premier League 2015-16")
 
-        return SimulationParams(
-            competition_id=int(target["competition_id"]),
-            season_id=int(target["season_id"]),
-            team_name=team_name,
-            manager_name=manager_name.strip(),
-            trigger_week=trigger_week,
-            n_runs=n_runs,
-            seed=seed,
-            trigger_type=trigger_type,
-            incoming_manager_name=incoming_manager_name.strip(),
-            transfer_player_name=transfer_player_name.strip(),
-            transfer_expected_role=transfer_expected_role,
+    cols = st.columns(len(_PRESETS))
+    for i, (col, preset) in enumerate(zip(cols, _PRESETS)):
+        with col:
+            with st.container(border=True):
+                st.markdown(f"**{preset['label']}**")
+                st.caption(f"Week {preset['trigger_week']}")
+                if st.button("Run", key=f"preset_{i}", use_container_width=True):
+                    return SimulationParams(
+                        competition_id=2,
+                        season_id=27,
+                        team_name=preset["team_name"],
+                        manager_name=preset["manager_name"],
+                        trigger_week=preset["trigger_week"],
+                        n_runs=n_runs,
+                        seed=seed,
+                        trigger_type="manager_change",
+                        incoming_manager_name=preset["incoming_manager_name"],
+                    )
+
+    # --- Custom (experimental) ---
+    with st.expander("Custom scenario (experimental)"):
+        st.caption(
+            "Advanced: build your own scenario. Transfer triggers and "
+            "free-text manager names may not match cached data."
         )
+
+        targets = _load_targets()
+        target_labels = [_competition_label(t) for t in targets]
+        selected_idx = int(
+            st.selectbox(
+                "Competition / Season",
+                range(len(targets)),
+                format_func=lambda i: target_labels[i],
+            )
+            or 0
+        )
+        target = targets[selected_idx]
+
+        clubs: list[str] = target["clubs"]
+        team_name = str(st.selectbox("Team", clubs) or clubs[0])
+
+        manager_name: str = st.text_input(
+            "Current Manager Name",
+            placeholder="e.g., Louis van Gaal",
+        )
+
+        trigger_week: int = st.slider(
+            "Trigger Week", min_value=1, max_value=38, value=10
+        )
+
+        trigger_type = str(
+            st.radio(
+                "Trigger Type",
+                options=["manager_change", "transfer_in"],
+                format_func=lambda x: {
+                    "manager_change": "Manager Change",
+                    "transfer_in": "Player Transfer (Experimental)",
+                }[x],
+            )
+            or "manager_change"
+        )
+
+        incoming_manager_name = ""
+        transfer_player_name = ""
+        transfer_expected_role = "starter"
+
+        if trigger_type == "manager_change":
+            incoming_manager_name = st.text_input(
+                "Incoming Manager Name",
+                placeholder="e.g., José Mourinho",
+            )
+        else:
+            transfer_player_name = st.text_input(
+                "Player Name",
+                placeholder="e.g., Kylian Mbappe",
+            )
+            transfer_expected_role = str(
+                st.selectbox(
+                    "Expected Role",
+                    options=["starter", "rotation", "squad"],
+                )
+                or "starter"
+            )
+
+        if st.button("Run Custom Scenario", use_container_width=True):
+            if not manager_name.strip():
+                st.error("Current Manager Name is required.")
+                return None
+            if trigger_type == "manager_change" and not incoming_manager_name.strip():
+                st.error("Incoming Manager Name is required.")
+                return None
+            if trigger_type == "transfer_in" and not transfer_player_name.strip():
+                st.error("Player Name is required.")
+                return None
+
+            return SimulationParams(
+                competition_id=int(target["competition_id"]),
+                season_id=int(target["season_id"]),
+                team_name=team_name,
+                manager_name=manager_name.strip(),
+                trigger_week=trigger_week,
+                n_runs=n_runs,
+                seed=seed,
+                trigger_type=trigger_type,
+                incoming_manager_name=incoming_manager_name.strip(),
+                transfer_player_name=transfer_player_name.strip(),
+                transfer_expected_role=transfer_expected_role,
+            )
 
     return None
 
@@ -387,8 +437,11 @@ def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
 # ---------------------------------------------------------------------------
 
 
-def _run_pipeline(params: SimulationParams) -> None:
-    """Execute the full pipeline and display results."""
+def _run_pipeline(params: SimulationParams) -> bool:
+    """Execute the full pipeline, cache results in session_state, and display.
+
+    Returns True on success, False on failure.
+    """
     progress = st.progress(0, text="Initializing...")
 
     # 1. Initialize agents (try cache first, then StatsBomb API).
@@ -409,7 +462,7 @@ def _run_pipeline(params: SimulationParams) -> None:
             )
         except Exception as e:
             st.error(f"Initialization failed: {e}")
-            return
+            return False
 
     progress.progress(30, text="Running simulation...")
 
@@ -448,30 +501,58 @@ def _run_pipeline(params: SimulationParams) -> None:
         )
     except Exception as e:
         st.error(f"Simulation failed: {e}")
-        return
+        return False
 
     progress.progress(70, text="Generating visualizations...")
 
     # 4. Compute player impacts.
     impacts = rank_player_impact(comparison, top_n=_DEFAULT_TOP_PLAYERS)
 
-    # 5. Resolve LLM client (if configured).
+    # 5. Cache results in session_state for rerun display.
+    st.session_state["_sim_comparison"] = comparison
+    st.session_state["_sim_init_result"] = init_result
+    st.session_state["_sim_impacts"] = impacts
+    st.session_state["_sim_incoming_profile"] = incoming_profile
+
+    progress.progress(100, text="Complete.")
+
+    # 6. Display results.
+    _display_results(comparison, params, init_result, impacts, incoming_profile)
+    return True
+
+
+def _display_cached_results() -> None:
+    """Display results from session_state without recomputing."""
+    params: SimulationParams = st.session_state["_sim_params"]
+    comparison: ComparisonResult = st.session_state["_sim_comparison"]
+    init_result: InitializationResult = st.session_state["_sim_init_result"]
+    impacts: list[PlayerImpact] = st.session_state["_sim_impacts"]
+    incoming_profile: ManagerAgent | None = st.session_state["_sim_incoming_profile"]
+
+    _display_results(comparison, params, init_result, impacts, incoming_profile)
+
+
+def _display_results(
+    comparison: ComparisonResult,
+    params: SimulationParams,
+    init_result: InitializationResult,
+    impacts: list[PlayerImpact],
+    incoming_profile: ManagerAgent | None,
+) -> None:
+    """Render all output sections from precomputed results."""
     llm_client = _get_llm_client()
 
-    # 6. Display results — conclusion first.
-    _render_delta_metrics(comparison)
+    _render_summary(comparison, params, impacts)
+    _render_player_impact(impacts, params)
     _render_report(comparison, params, impacts, llm_client)
     if params.trigger_type == "manager_change":
         _render_team_radar(comparison, init_result, incoming_profile)
     else:
-        st.header("Team Radar Chart")
+        st.header("Team Comparison")
         st.info(
             "Team radar chart is not applicable for transfer triggers. "
             "Tactical estimates are manager-driven and unchanged by player transfers."
         )
-    _render_player_impact(impacts, params)
-
-    progress.progress(100, text="Complete.")
 
 
 # ---------------------------------------------------------------------------
@@ -497,33 +578,53 @@ def _get_llm_client() -> LLMClient | None:
 # ---------------------------------------------------------------------------
 
 
-def _render_delta_metrics(comparison: ComparisonResult) -> None:
-    """Display delta metrics summary table."""
-    st.header("Delta Metrics")
+def _render_summary(
+    comparison: ComparisonResult,
+    params: SimulationParams,
+    impacts: list[PlayerImpact],
+) -> None:
+    """Display one-line conclusion + key metrics."""
+    st.header("Summary")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric(
-        "Points (mean)",
-        f"{comparison.with_change.total_points_mean:.1f}",
-        delta=f"{comparison.delta.points_mean_diff:+.1f}",
-    )
-    col2.metric(
-        "Points (median)",
-        f"{comparison.with_change.total_points_median:.1f}",
-        delta=f"{comparison.delta.points_median_diff:+.1f}",
-    )
-    col3.metric("Runs", f"{comparison.no_change.n_runs}")
+    delta = comparison.delta.points_mean_diff
+    if delta > 0.5:
+        direction = "positive"
+    elif delta < -0.5:
+        direction = "negative"
+    else:
+        direction = "marginal"
 
-    # Cascade event diff table.
-    cascade_diff = comparison.delta.cascade_count_diff
-    if cascade_diff:
-        st.subheader("Cascade Event Frequency (B - A)")
-        st.table(
-            {
-                "Event Type": list(cascade_diff.keys()),
-                "Diff (mean/run)": [f"{v:+.2f}" for v in cascade_diff.values()],
-            }
+    # One-line conclusion (varies by trigger type).
+    top_player = impacts[0].player_name if impacts else "no player"
+    n_runs = len(comparison.no_change.run_results) or comparison.no_change.n_runs
+
+    if params.trigger_type == "transfer_in":
+        headline = (
+            f"**{params.team_name}**: Signing {params.transfer_player_name} "
+            f"shows a **{direction}** impact. Most affected: **{top_player}**."
         )
+    else:
+        headline = (
+            f"**{params.team_name}**: Dismissing {params.manager_name} shows a "
+            f"**{direction}** impact. Most affected: **{top_player}**."
+        )
+
+    # Summary card.
+    with st.container(border=True):
+        st.markdown(headline)
+        col1, col2, col3 = st.columns(3)
+        col1.metric(
+            "Points (mean)",
+            f"{comparison.with_change.total_points_mean:.1f}",
+            delta=f"{delta:+.1f}",
+        )
+        col2.metric(
+            "Points (median)",
+            f"{comparison.with_change.total_points_median:.1f}",
+            delta=f"{comparison.delta.points_median_diff:+.1f}",
+        )
+        col3.metric("Runs", f"{n_runs}")
+        st.caption("This is a scenario comparison, not a prediction.")
 
 
 def _render_team_radar(
@@ -532,7 +633,7 @@ def _render_team_radar(
     incoming_profile: ManagerAgent | None,
 ) -> None:
     """Display team radar chart."""
-    st.header("Team Radar Chart")
+    st.header("Team Comparison")
 
     st.caption(
         "Tactical estimate axes (PPDA, Possession, Prog Passes) use neutral "
@@ -547,8 +648,40 @@ def _render_team_radar(
         init_result.league_context,
     )
     fig = create_radar_figure(radar_data)
-    st.pyplot(fig)
+    # Center the chart at player-radar width (1/3 of page).
+    _, center, _ = st.columns(3)
+    with center:
+        st.pyplot(fig)
     plt.close(fig)
+
+
+def _impact_direction(impact: PlayerImpact) -> tuple[str, str]:
+    """Return arrow symbol and one-line reason for a player's impact."""
+    form_diff = impact.mean_form_b - impact.mean_form_a
+    trust_diff = impact.mean_trust_b - impact.mean_trust_a
+    understanding_diff = impact.mean_understanding_b - impact.mean_understanding_a
+
+    # Determine overall direction from form change.
+    if form_diff > 0.02:
+        arrow = "▲"
+    elif form_diff < -0.02:
+        arrow = "▼"
+    else:
+        arrow = "─"
+
+    # Pick the most notable change for the one-line reason.
+    changes: list[tuple[float, str]] = [
+        (abs(form_diff), f"form {'up' if form_diff > 0 else 'down'}"),
+        (abs(trust_diff), f"trust {'gained' if trust_diff > 0 else 'lost'}"),
+        (
+            abs(understanding_diff),
+            f"tactical understanding {'improved' if understanding_diff > 0 else 'dropped'}",
+        ),
+    ]
+    changes.sort(key=lambda x: x[0], reverse=True)
+    reason = changes[0][1] if changes[0][0] > 0.01 else "minimal change"
+
+    return arrow, reason
 
 
 def _render_player_impact(
@@ -571,11 +704,22 @@ def _render_player_impact(
         st.info("No significant player impact detected among existing squad.")
         return
 
+    # Direction arrows + one-line reason for each player.
     for impact in impacts:
-        st.subheader(f"{impact.player_name} (impact: {impact.impact_score:.3f})")
-        fig = create_player_radar_figure(impact)
-        st.pyplot(fig)
-        plt.close(fig)
+        arrow, reason = _impact_direction(impact)
+        st.markdown(f"{arrow} **{impact.player_name}** — {reason}")
+
+    st.divider()
+
+    # Horizontal radar layout: one column per player.
+    cols = st.columns(len(impacts))
+    for col, impact in zip(cols, impacts):
+        with col:
+            st.markdown(f"**{impact.player_name}**")
+            st.caption(f"Impact: {impact.impact_score:.3f}")
+            fig = create_player_radar_figure(impact)
+            st.pyplot(fig)
+            plt.close(fig)
 
 
 def _render_transfer_player_info(params: SimulationParams) -> None:
@@ -715,6 +859,16 @@ def _render_data_report(report_input: ReportInput) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _params_key(params: SimulationParams) -> str:
+    """Create a hashable key from simulation params for session caching."""
+    return (
+        f"{params.competition_id}_{params.season_id}_{params.team_name}_"
+        f"{params.manager_name}_{params.trigger_week}_{params.trigger_type}_"
+        f"{params.incoming_manager_name}_{params.transfer_player_name}_"
+        f"{params.transfer_expected_role}_{params.n_runs}_{params.seed}"
+    )
+
+
 def main() -> None:
     """Streamlit app entry point."""
     st.set_page_config(
@@ -725,20 +879,29 @@ def main() -> None:
 
     st.title("IfFootball - What-If Simulation")
     st.caption(
-        "Compare simulation branches with and without a change trigger "
-        "(manager change or player transfer). "
         "IfFootball is a what-if simulation tool, not a prediction engine. "
         "Results should not be used for real-world decision-making."
     )
 
-    params = _render_sidebar()
+    # Input: buttons store params in session_state.
+    new_params = _render_input()
 
-    if params is not None:
-        _run_pipeline(params)
+    if new_params is not None:
+        # New simulation requested — compute and cache.
+        key = _params_key(new_params)
+        if st.session_state.get("_sim_key") != key:
+            success = _run_pipeline(new_params)
+            if success:
+                st.session_state["_sim_key"] = key
+                st.session_state["_sim_params"] = new_params
+        else:
+            # Same params — just display cached results.
+            _display_cached_results()
+    elif "_sim_params" in st.session_state:
+        # No new button press — display previous results.
+        _display_cached_results()
     else:
-        st.info(
-            "Configure parameters in the sidebar and click 'Run Simulation'."
-        )
+        st.info("Select a scenario above or build a custom one to start.")
 
 
 if __name__ == "__main__":
