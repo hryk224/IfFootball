@@ -18,7 +18,12 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from iffootball.agents.manager import ManagerAgent
-from iffootball.agents.trigger import ManagerChangeTrigger
+from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
+from iffootball.agents.trigger import (
+    ChangeTrigger,
+    ManagerChangeTrigger,
+    TransferInTrigger,
+)
 from iffootball.collectors.statsbomb import StatsBombOpenDataCollector
 from iffootball.config import SimulationRules
 from iffootball.llm.client import LLMClient
@@ -62,10 +67,15 @@ class SimulationParams:
     season_id: int
     team_name: str
     manager_name: str
-    incoming_manager_name: str
     trigger_week: int
     n_runs: int
     seed: int
+    trigger_type: str  # "manager_change" | "transfer_in"
+    # Manager change fields
+    incoming_manager_name: str = ""
+    # Transfer fields
+    transfer_player_name: str = ""
+    transfer_expected_role: str = "starter"
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +123,35 @@ def _build_incoming_profile(name: str) -> ManagerAgent:
     )
 
 
+def _build_transfer_trigger(params: SimulationParams) -> TransferInTrigger:
+    """Build a TransferInTrigger with a neutral-attribute PlayerAgent.
+
+    The transfer player uses 50th-percentile technical attributes since
+    we don't have StatsBomb data for hypothetical signings.
+    """
+    # Generate a unique player_id unlikely to collide with existing squad.
+    player = PlayerAgent(
+        player_id=99999,
+        player_name=params.transfer_player_name,
+        position_name="Center Forward",
+        role_family=RoleFamily.FORWARD,
+        broad_position=BroadPosition.FW,
+        pace=50.0,
+        passing=50.0,
+        shooting=50.0,
+        pressing=50.0,
+        defending=50.0,
+        physicality=50.0,
+        consistency=50.0,
+    )
+    return TransferInTrigger(
+        player_name=params.transfer_player_name,
+        expected_role=params.transfer_expected_role,
+        applied_at=params.trigger_week,
+        player=player,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sidebar - Input
 # ---------------------------------------------------------------------------
@@ -147,12 +186,45 @@ def _render_sidebar() -> SimulationParams | None:
     )
 
     st.sidebar.divider()
-    st.sidebar.subheader("Manager Change")
-
-    incoming_manager_name: str = st.sidebar.text_input(
-        "Incoming Manager Name",
-        placeholder="e.g., Jose Mourinho",
+    trigger_type = str(
+        st.sidebar.radio(
+            "Trigger Type",
+            options=["manager_change", "transfer_in"],
+            format_func=lambda x: {
+                "manager_change": "Manager Change",
+                "transfer_in": "Player Transfer (Experimental)",
+            }[x],
+        )
+        or "manager_change"
     )
+
+    # Manager change fields.
+    incoming_manager_name = ""
+    transfer_player_name = ""
+    transfer_expected_role = "starter"
+
+    if trigger_type == "manager_change":
+        incoming_manager_name = st.sidebar.text_input(
+            "Incoming Manager Name",
+            placeholder="e.g., Jose Mourinho",
+        )
+    else:
+        st.sidebar.caption(
+            "Experimental: Transfer trigger adds a player with neutral "
+            "attributes (50th percentile). Squad composition differs between "
+            "branches, which may affect player impact rankings."
+        )
+        transfer_player_name = st.sidebar.text_input(
+            "Player Name",
+            placeholder="e.g., Kylian Mbappe",
+        )
+        transfer_expected_role = str(
+            st.sidebar.selectbox(
+                "Expected Role",
+                options=["starter", "rotation", "squad"],
+            )
+            or "starter"
+        )
 
     st.sidebar.divider()
     st.sidebar.subheader("Simulation Settings")
@@ -184,8 +256,11 @@ def _render_sidebar() -> SimulationParams | None:
         if not manager_name.strip():
             st.sidebar.error("Current Manager Name is required.")
             return None
-        if not incoming_manager_name.strip():
+        if trigger_type == "manager_change" and not incoming_manager_name.strip():
             st.sidebar.error("Incoming Manager Name is required.")
+            return None
+        if trigger_type == "transfer_in" and not transfer_player_name.strip():
+            st.sidebar.error("Player Name is required.")
             return None
 
         return SimulationParams(
@@ -193,10 +268,13 @@ def _render_sidebar() -> SimulationParams | None:
             season_id=int(target["season_id"]),
             team_name=team_name,
             manager_name=manager_name.strip(),
-            incoming_manager_name=incoming_manager_name.strip(),
             trigger_week=trigger_week,
             n_runs=n_runs,
             seed=seed,
+            trigger_type=trigger_type,
+            incoming_manager_name=incoming_manager_name.strip(),
+            transfer_player_name=transfer_player_name.strip(),
+            transfer_expected_role=transfer_expected_role,
         )
 
     return None
@@ -229,15 +307,21 @@ def _run_pipeline(params: SimulationParams) -> None:
 
     progress.progress(30, text="Running simulation...")
 
-    # 2. Build trigger with incoming profile.
-    incoming_profile = _build_incoming_profile(params.incoming_manager_name)
-    trigger = ManagerChangeTrigger(
-        outgoing_manager_name=params.manager_name,
-        incoming_manager_name=params.incoming_manager_name,
-        transition_type="mid_season",
-        applied_at=params.trigger_week,
-        incoming_profile=incoming_profile,
-    )
+    # 2. Build trigger.
+    trigger: ChangeTrigger
+    incoming_profile: ManagerAgent | None = None
+
+    if params.trigger_type == "transfer_in":
+        trigger = _build_transfer_trigger(params)
+    else:
+        incoming_profile = _build_incoming_profile(params.incoming_manager_name)
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name=params.manager_name,
+            incoming_manager_name=params.incoming_manager_name,
+            transition_type="mid_season",
+            applied_at=params.trigger_week,
+            incoming_profile=incoming_profile,
+        )
 
     # 3. Run comparison.
     rules = SimulationRules.load(_RULES_DIR)
@@ -270,8 +354,15 @@ def _run_pipeline(params: SimulationParams) -> None:
 
     # 6. Display results.
     _render_delta_metrics(comparison)
-    _render_team_radar(comparison, init_result, incoming_profile)
-    _render_player_impact(impacts)
+    if params.trigger_type == "manager_change":
+        _render_team_radar(comparison, init_result, incoming_profile)
+    else:
+        st.header("Team Radar Chart")
+        st.info(
+            "Team radar chart is not applicable for transfer triggers. "
+            "Tactical estimates are manager-driven and unchanged by player transfers."
+        )
+    _render_player_impact(impacts, params)
     _render_report(comparison, params, impacts, llm_client)
 
     progress.progress(100, text="Complete.")
@@ -332,7 +423,7 @@ def _render_delta_metrics(comparison: ComparisonResult) -> None:
 def _render_team_radar(
     comparison: ComparisonResult,
     init_result: InitializationResult,
-    incoming_profile: ManagerAgent,
+    incoming_profile: ManagerAgent | None,
 ) -> None:
     """Display team radar chart."""
     st.header("Team Radar Chart")
@@ -354,12 +445,24 @@ def _render_team_radar(
     plt.close(fig)
 
 
-def _render_player_impact(impacts: list[PlayerImpact]) -> None:
+def _render_player_impact(
+    impacts: list[PlayerImpact],
+    params: SimulationParams,
+) -> None:
     """Display player impact radar charts."""
     st.header("Player Impact")
 
+    if params.trigger_type == "transfer_in":
+        st.caption(
+            "Transfer trigger: the new signing only exists in Branch B, so "
+            "they are shown separately below. Existing player rankings reflect "
+            "indirect effects of the squad addition."
+        )
+        # Show new signing info from Branch B.
+        _render_transfer_player_info(params)
+
     if not impacts:
-        st.info("No significant player impact detected.")
+        st.info("No significant player impact detected among existing squad.")
         return
 
     for impact in impacts:
@@ -367,6 +470,18 @@ def _render_player_impact(impacts: list[PlayerImpact]) -> None:
         fig = create_player_radar_figure(impact)
         st.pyplot(fig)
         plt.close(fig)
+
+
+def _render_transfer_player_info(params: SimulationParams) -> None:
+    """Display a summary card for the transferred player."""
+    st.subheader(f"New Signing: {params.transfer_player_name}")
+    st.write(
+        f"- **Role:** {params.transfer_expected_role}\n"
+        f"- **Joined at:** week {params.trigger_week + 1}\n"
+        f"- **Attributes:** neutral (50th percentile) — no StatsBomb data\n"
+        f"- **Note:** This player only exists in Branch B. "
+        f"Their state is not included in the A/B impact ranking above."
+    )
 
 
 def _render_report(
@@ -382,10 +497,16 @@ def _render_report(
     """
     st.header("Comparison Report")
 
-    trigger_desc = (
-        f"Manager change: {params.manager_name} -> "
-        f"{params.incoming_manager_name} at week {params.trigger_week}"
-    )
+    if params.trigger_type == "transfer_in":
+        trigger_desc = (
+            f"Transfer in: {params.transfer_player_name} "
+            f"({params.transfer_expected_role}) at week {params.trigger_week}"
+        )
+    else:
+        trigger_desc = (
+            f"Manager change: {params.manager_name} -> "
+            f"{params.incoming_manager_name} at week {params.trigger_week}"
+        )
 
     # Build player impact entries.
     player_entries = [
