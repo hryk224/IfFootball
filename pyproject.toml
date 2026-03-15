@@ -8,9 +8,10 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "statsbombpy==1.17.0",
-    "pandas==3.0.1",
+    "pandas==2.3.3",
     "numpy==2.4.2",
     "matplotlib==3.10.8",
+    "streamlit==1.45.0",
 ]
 
 [project.optional-dependencies]
