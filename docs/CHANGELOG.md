@@ -1,284 +1,232 @@
 # Changelog
 
-## M5 — MVP Finalization
+## MVP Finalization
 
-MVP の仕上げとして、実 LLM 接続・Transfer Trigger の UI 統合・ユーザー受け入れテストを完了。
+Completed real LLM provider integration, transfer trigger UI, and end-to-end user acceptance testing.
 
 ### Added
 
-- 4 プロバイダー対応 LLM クライアント（`llm/providers/`）
-  - OpenAI（MVP 標準）、Anthropic、Google Gemini、Groq（ライブデモ用）
-  - `LLM_PROVIDER` 明示指定 → API キー auto-detect のフォールバック順
-  - SDK import 可否を含めた provider 解決
-  - `python-dotenv` で `.env` ファイル読み込み
-- Transfer Trigger を UI に experimental 対応として追加
-  - サイドバーに Trigger Type ラジオ（Manager Change / Player Transfer）
-  - Transfer 時: team radar 非表示、新加入選手の info card 表示
-  - MVP スコープに含める判断を記録（M6 で公開導線整備予定）
-- `.env.example` — 全プロバイダーの API キー設定テンプレート
+- Multi-provider LLM client (`llm/providers/`)
+  - OpenAI (default), Anthropic, Google Gemini, Groq
+  - `LLM_PROVIDER` env var for explicit selection; auto-detect fallback by API key + SDK availability
+  - `.env` loading via `python-dotenv`
+- Transfer trigger as experimental UI path
+  - Trigger type selector (Manager Change / Player Transfer) in sidebar
+  - Transfer mode: team radar hidden, new signing info card displayed
+- `.env.example` template for all provider API keys
 
 ### Changed
 
-- `app.py` — LLM 有効時は `generate_report()` で LLM 生成 Markdown を表示、失敗時はデータのみフォールバック
-- `pyproject.toml` — `[project.optional-dependencies]` に `llm` グループ追加（`openai` / `anthropic` / `google-genai` / `groq`）、`python-dotenv` を通常依存に追加
+- `app.py` renders LLM-generated Markdown reports when a provider is configured; falls back to data-only structured report on failure or when unconfigured
+- `pyproject.toml` adds `llm` optional dependency group (`openai` / `anthropic` / `google-genai` / `groq`) and `python-dotenv` as core dependency
 
 ---
 
-## M4 — Backtest
+## Backtesting
 
-Van Gaal 仮想解任シナリオ（Manchester United 2015-16, week 29）のバックテストを実行し、評価結果と課題を記録。
+Executed a backtest scenario (Manchester United — Van Gaal dismissal, 2015-16 season, week 29) and recorded evaluation results.
 
 ### Added
 
-- `docs/simulation-rules.md` — 全 TOML パラメータの定義・根拠・参照元を記述
-- `scripts/backtest_van_gaal.py` — バックテスト実行スクリプト（initialize → run_comparison → player_impact → JSON 出力）
+- `docs/simulation-rules.md` — All TOML parameter definitions with rationale and source classification
+- `scripts/backtest_van_gaal.py` — Backtest script: initialize → run_comparison → player_impact → JSON output
 
 ### Findings
 
-- Points delta: +0.5（B-A, 20 runs）— 微増傾向だが std 3.5 に対して統計的に不確実
-- Cascade event 過剰発火: form_drop +29.9/run、tactical_confusion +36.0/run（9 試合で）
-- tactical_understanding が全員一律 -0.250（個人差が反映されていない）
-- 課題詳細は `private/docs/implementation-notes.md` M4 セクションに記録
+- Points delta: +0.5 (B-A, 20 runs) — slight positive trend but statistically uncertain against std 3.5
+- Cascade event over-firing: form_drop +29.9/run, tactical_confusion +36.0/run over 9 matches
+- tactical_understanding uniformly -0.250 for all players (individual differences not reflected)
 
 ---
 
-## M3 — Output Layer
+## Output Layer
 
-M2 のシミュレーション結果を可視化・レポート化し、Streamlit UI で一気通貫の操作を可能にした。
+Added visualization, LLM report generation, and Streamlit UI for end-to-end what-if simulation.
 
 ### Added
 
-#### Trigger Enhancement
+#### Trigger Enhancements
 
-- `ManagerChangeTrigger.incoming_profile` — 後任監督の戦術プロファイルをオプションで指定可能に
-- `TransferInTrigger.player` — 移籍選手の PlayerAgent を payload として保持、engine で squad に追加
-  - role ベースの trust 初期化（starter=0.7, rotation=0.5, squad=0.3）
-  - deepcopy で branch isolation を保証
+- `ManagerChangeTrigger.incoming_profile` — Optional tactical profile for the incoming manager; copies static attributes when provided, neutral defaults when None
+- `TransferInTrigger.player` — PlayerAgent payload for incoming transfers; added to squad with role-based trust initialization (starter=0.7, rotation=0.5, squad=0.3) and deepcopy for branch isolation
 
 #### Visualization
 
-- チーム差分レーダーチャート（`visualization/radar_chart.py` + `radar_data.py`）
-  - 5 軸: xG/90（simulation output）、xGA/90（fixed baseline）、PPDA / Possession / Prog Passes（tactical estimates）
-  - league average 基準の 0-1 正規化、PPDA / xGA 反転
-- 選手差分レーダーチャート（`visualization/player_radar.py` + `player_impact.py`）
-  - 4 軸: Form / Fatigue（反転）/ Tactical Understanding / Manager Trust
-  - player_id ベースのマッチング、impact score（per-run 差分絶対値の平均）でランキング
-- 戦術推定モジュール（`visualization/tactical_estimate.py`）
-  - manager profile → PPDA / Possession / Progressive Passes の推定（league average 回帰 + formation 補正）
+- Team comparison radar chart (`visualization/radar_chart.py` + `radar_data.py`)
+  - 5 axes: xG/90 (simulation output), xGA/90 (fixed baseline), PPDA / Possession / Prog Passes (tactical estimates)
+  - League-average-centered 0-1 normalization; PPDA and xGA inverted
+- Player impact radar chart (`visualization/player_radar.py` + `player_impact.py`)
+  - 4 axes: Form / Fatigue (inverted) / Tactical Understanding / Manager Trust
+  - Impact score: mean absolute dynamic-state difference across runs; ranked by player_id for deterministic tiebreaking
+- Tactical estimate module (`visualization/tactical_estimate.py`)
+  - Manager profile → PPDA / Possession / Progressive Passes estimates with league-average regression and formation adjustment
 
 #### LLM Output Layer
 
-- TP 行動説明（`llm/action_explanation.py` + `prompts/action_explanation_v1.md`）
-  - fact / analysis / hypothesis ラベル付き、source_types で data provenance を明示
-- 構造化レポート生成（`llm/report_generation.py` + `prompts/report_generation_v1.md`）
-  - 5 セクション固定（Summary / Key Differences / Causal Chain / Player Impact / Limitations）
-  - LLM 出力のセクション検証、欠落時は構造化フォールバック
-- 自然言語入力構造化（`llm/input_structuring.py` + `prompts/input_structuring_v1.md`）
-  - manager_change / player_transfer_in の 2 trigger type をパース
-  - enum フィールドのデフォルト適用、applied_at 型検証
+- Turning point action explanation (`llm/action_explanation.py` + `prompts/action_explanation_v1.md`)
+  - fact / analysis / hypothesis labels with source_types for data provenance
+- Structured report generation (`llm/report_generation.py` + `prompts/report_generation_v1.md`)
+  - 5 fixed sections (Summary / Key Differences / Causal Chain / Player Impact / Limitations)
+  - Section heading validation with structured fallback on malformed LLM output
+- Natural language input structuring (`llm/input_structuring.py` + `prompts/input_structuring_v1.md`)
+  - Parses manager_change and player_transfer_in trigger types
+  - Enum field defaults, applied_at type validation
 
 #### UI
 
-- Streamlit アプリ（`app.py`）
-  - サイドバー: competition/team/manager/trigger_week/incoming manager/N runs/seed
-  - メインエリア: delta metrics・team radar・player impact radars・structured report
+- Streamlit app (`app.py`)
+  - Sidebar: competition/team/manager/trigger type/trigger week/N runs/seed
+  - Main area: delta metrics, team radar, player impact radars, structured report
 
 #### Storage
 
-- `ComparisonMeta` / `ComparisonResultWithMeta` — rng_seed / n_runs / trigger_summary / created_at (UTC ISO 8601) を永続化
-- cascade*events の run_id 命名規約をドキュメント化（`{branch}*{index}`）
+- `ComparisonMeta` / `ComparisonResultWithMeta` — Persists rng_seed, n_runs, trigger_summary, and created_at (UTC ISO 8601) alongside comparison results
+- Documented cascade_events run_id naming convention (`{branch}_{index}`)
 
 ### Changed
 
 #### Config Externalization
 
-- `RuleBasedHandler` の action distribution をハードコードから `turning_points.toml` の `[action_distribution]` セクションに外部化
-  - 3 条件（bench_streak_low_trust / low_understanding / default）、3 アクション必須バリデーション
+- Moved RuleBasedHandler action distributions from hardcoded values to `turning_points.toml` `[action_distribution]` section
+  - 3 conditions (bench_streak_low_trust / low_understanding / default); all 3 actions required per distribution
 
-#### Cascade Taxonomy
+#### Cascade Event Taxonomy
 
-- `VALID_EVENT_TYPES` に 3 type 追加: `adaptation_progress` / `tactical_confusion`（使用開始）/ `squad_unrest`
-- engine: adapt → `adaptation_progress` 記録、low_understanding + adapt → `tactical_confusion` 併記、2+ resist/week → `squad_unrest`
+- Added 3 event types to `VALID_EVENT_TYPES`: `adaptation_progress`, `tactical_confusion` (now actively emitted), `squad_unrest`
+- Engine: adapt → `adaptation_progress`; low_understanding + adapt → `tactical_confusion`; 2+ resist/week → `squad_unrest`
 
 #### Consistency Model
 
-- `PlayerAgent.consistency` をポジショングループ別複合指標に拡張
-  - GK/MF: pass_std、DF: def_std（Tackle+Interception）、FW: xg_std
-  - 共通副指標: pass_std、複合重み 0.5/0.5（暫定）
-  - グループ内 percentile、ゼロイベント試合を含む真の per-match variance
+- Extended `PlayerAgent.consistency` to position-group composite metric
+  - GK/MF: pass_std, DF: def_std (Tackle+Interception), FW: xg_std
+  - Common secondary: pass_std; composite weight 0.5/0.5 (provisional)
+  - Within-group percentile ranking; zero-event matches included in variance calculation
 
 #### Match Result
 
-- `MatchResult` に `expected_goals_for` / `expected_goals_against` フィールド追加
+- Added `expected_goals_for` / `expected_goals_against` fields to `MatchResult`
 
 #### Dependencies
 
-- `matplotlib==3.10.8` 追加
-- `streamlit==1.45.0` 追加
-- `pandas` 3.0.1 → 2.3.3 にダウングレード（streamlit 互換）
+- Added `matplotlib==3.10.8`, `streamlit==1.45.0`
+- Downgraded `pandas` 3.0.1 → 2.3.3 (streamlit compatibility)
 
 ---
 
-## M2 — Simulation Foundation
+## Simulation Foundation
 
-M1 コンポーネントを初期化パイプラインで接続し、週次シミュレーションエンジン・Branch A/B 比較・結果永続化までを実装。
+Connected data foundation components into an initialization pipeline and implemented the weekly simulation engine, Branch A/B comparison, and result persistence.
 
 ### Added
 
 #### Initialization Pipeline
 
-- M1 コンポーネント（collectors → converters → LLM → storage）を単一の `initialize()` で接続（`pipeline.py`）
-  - データを 3 系統（target-team pre-trigger / league-wide pre-trigger / full-season）に分離し未来リークを構造的に防止
-  - `build_league_context()` でリーグ平均 PPDA・xG・progressive passes を StatsBomb データから算出
-  - `cultural_inertia` を manager tenure から自動更新
-  - LLM 補完は optional（`style_stubbornness` のみ更新、`preferred_formation` は StatsBomb 事実値を尊重）
-  - commit `5e01dee`
+- Single `initialize()` entry point connecting collectors → converters → LLM → storage (`pipeline.py`)
+  - 3-way data separation (target-team pre-trigger / league-wide pre-trigger / full-season) to structurally prevent future data leakage
+  - `build_league_context()` computes league-average PPDA, xG, and progressive passes from StatsBomb data
+  - `cultural_inertia` auto-updated from manager tenure length
+  - LLM enrichment is optional (updates `style_stubbornness` only; `preferred_formation` respects StatsBomb fact values)
 
 #### Domain Models
 
-- `ManagerChangeTrigger` / `TransferInTrigger` ドメインモデルを追加（`agents/trigger.py`）
-  - `trigger_type` は `field(init=False)` で固定値。`applied_at` の意味（第 N 節終了後注入、第 N+1 節から効果）を明記
-  - commit `c9b7350`
+- `ManagerChangeTrigger` / `TransferInTrigger` domain models (`agents/trigger.py`)
+  - `trigger_type` fixed via `field(init=False)`; `applied_at` semantics documented (injected after week N, effects from week N+1)
 
 #### Simulation Rules Config
 
-- TOML 設定ファイルと型付きローダーを実装（`config.py` + `config/simulation_rules/`）
-  - `adaptation.toml` — 疲労・戦術習熟度・trust・fatigue_penalty_weight・home_advantage_factor
-  - `turning_points.toml` — player TP 閾値（bench_streak / tactical_understanding / trust_low）・manager TP 閾値（job_security / style_stubbornness）
-  - `SimulationRules.load(config_dir)` で frozen dataclass として読み込み、`__post_init__` で値域バリデーション
-  - commit `890c5c0`
+- TOML config files with typed frozen-dataclass loader (`config.py` + `config/simulation_rules/`)
+  - `adaptation.toml` — fatigue, tactical understanding, trust, fatigue penalty weight
+  - `turning_points.toml` — player TP thresholds (bench_streak / tactical_understanding / trust_low), manager TP thresholds (job_security / style_stubbornness)
+  - `SimulationRules.load(config_dir)` with `__post_init__` value-range validation
 
 #### Simulation Engine
 
-- Poisson モデルによる試合結果決定を実装（`simulation/match_result.py`）
-  - `agent_state_factor` — starters の form/fatigue から乗算係数算出（0.5–1.5 clamp）
-  - `home_advantage_factor` で home/away 補正
-  - `numpy.random.Generator` を外部注入（seed 制御で再現可能）
-  - commit `dc60617`, `cac92c4`
-- フォーメーション解析 + スタメン選定を実装（`simulation/lineup_selection.py`）
-  - `parse_formation("4-3-3")` → ポジション枠変換
-  - `selection_score` — 戦術適合度・trust・form・fatigue penalty・short-term understanding penalty（全て config 駆動）
-  - commit `19338d1`
-- 週次状態更新（手順 4–7）を実装（`simulation/state_update.py`）
-  - fatigue・tactical_understanding（適応曲線）・manager_trust・job_security の更新関数
-  - commit `7974fe5`
-- ターニングポイント判定 + RuleBasedHandler を実装（`simulation/turning_point.py`）
-  - `ActionDistribution` — 確率分布の正規化・バリデーション
-  - `TurningPointHandler` Protocol（Phase 1/2 切り替え境界）
-  - player TP（bench_streak / low_understanding）・manager TP（job_security warning/critical）
-  - commit `50f68d4`
-- CascadeEvent モデル + トラッカーを実装（`simulation/cascade_tracker.py`）
-  - depth 制限（inclusive）・importance 閾値によるフィルタリング
-  - `record_chained()` で因果連鎖を自動追跡
-  - commit `6e48ba2`
-- 週次シミュレーションループを実装（`simulation/engine.py`）
-  - `Simulation.run()` — 10 ステップ週次ループを全フィクスチャに対して実行
-  - `SimulationResult` — match_results・cascade_events・final_squad/manager の deepcopy スナップショット
-  - `ManagerChangeTrigger` でマネージャー交代（戦術属性をニュートラルにリセット）
-  - commit `cd116c1`
-- Branch A/B 比較を実装（`simulation/comparison.py`）
-  - `run_comparison()` — N 回並行実行、`rng.spawn(2)` で独立再現可能な乱数系列
-  - `AggregatedResult` / `DeltaMetrics` / `ComparisonResult` — 勝ち点統計・cascade event 頻度・B-A 差分
-  - commit `b928175`
+- Poisson match result model (`simulation/match_result.py`)
+  - `agent_state_factor` from starter form/fatigue (0.5-1.5 clamp)
+  - Home advantage adjustment
+  - Seeded `numpy.random.Generator` for reproducibility
+- Formation parsing + lineup selection (`simulation/lineup_selection.py`)
+  - `parse_formation("4-3-3")` → position slot conversion
+  - `selection_score` from tactical fit, trust, form, fatigue penalty, understanding penalty (all config-driven)
+- Weekly state updates (`simulation/state_update.py`)
+  - fatigue, tactical_understanding (adaptation curve), manager_trust, job_security
+- Turning point detection + RuleBasedHandler (`simulation/turning_point.py`)
+  - `ActionDistribution` with normalization and validation
+  - `TurningPointHandler` Protocol (swappable rule-based / future LLM-based boundary)
+  - Player TPs (bench_streak / low_understanding), Manager TPs (job_security warning/critical)
+- CascadeEvent model + tracker (`simulation/cascade_tracker.py`)
+  - Depth limit and importance threshold filtering
+  - `record_chained()` for automatic cause-chain tracking
+- Weekly simulation loop (`simulation/engine.py`)
+  - `Simulation.run()` — 10-step weekly loop over all fixtures
+  - `SimulationResult` with deepcopy snapshots of final squad/manager state
+- Branch A/B comparison (`simulation/comparison.py`)
+  - `run_comparison()` — N parallel runs with `rng.spawn(2)` for independent reproducible streams
+  - `AggregatedResult` / `DeltaMetrics` / `ComparisonResult`
 
 #### Storage
 
-- SQLite ストレージを拡張（`storage/db.py`）
-  - `LeagueContext` / `CascadeEvent` / `ComparisonResult` の保存・読み込みを追加
-  - `ComparisonResult` は JSON blob で保存（`run_results` 除外、`run_results=()` で復元）
-  - `CascadeEvent` は `(comparison_key, run_id, ordinal)` で一意管理
-  - commit `3f8028b`
+- Extended SQLite storage (`storage/db.py`)
+  - Added persistence for `LeagueContext`, `CascadeEvent`, `ComparisonResult`
+  - `ComparisonResult` stored as JSON blobs (`run_results` excluded; restored as empty tuples on load)
+  - `CascadeEvent` keyed by `(comparison_key, run_id, ordinal)`
 
 #### Data Quality
 
-- `PlayerAgent.consistency` を xG 分散から算出（`converters/stats_to_attributes.py`）
-  - 試合ごとの xG 標準偏差を inverted percentile 化（低分散 = 高 consistency）
-  - 5 試合未満の選手は 50.0 placeholder を維持
-  - commit `cac92c4`
+- `PlayerAgent.consistency` derived from per-match xG variance (`converters/stats_to_attributes.py`)
+  - Inverted percentile (low variance = high consistency)
+  - Players with fewer than 5 xG-contributing matches retain 50.0 placeholder
 
-### Changed (M2 回収)
+### Changed
 
 #### Scale Unification
 
-- `PlayerAgent` の動的状態属性（`current_form` / `tactical_understanding` / `manager_trust`）を 0-100 → 0.0-1.0 に統一
-  - config 値（`trust_increase_on_start` / `trust_decrease_on_bench` / `trust_low`）も 0.0-1.0 に変更
-  - simulation 内の `* 100.0` 暫定変換コードを全て除去
-  - `lineup_selection.py` の `tactical_fit` を `/100.0` で正規化し、全スコア成分を 0-1 スケールに揃えた
-  - commit `4057f90`
+- Unified `PlayerAgent` dynamic state attributes (`current_form` / `tactical_understanding` / `manager_trust`) from 0-100 to 0.0-1.0 scale
+  - Config values and lineup selection scores aligned to 0-1
 
 #### Config Separation
 
-- `home_advantage_factor` を `AdaptationConfig` から分離し、新設の `MatchConfig`（`config/simulation_rules/match.toml`）に移動
-  - `simulate_match()` に `match_config: MatchConfig` 引数を追加
-  - `AdaptationConfig` の「0-100 scale」例外注記を除去
-  - commit `7bbc9f5`
+- Moved `home_advantage_factor` from `AdaptationConfig` to dedicated `MatchConfig` (`config/simulation_rules/match.toml`)
 
 ---
 
-## M1 — Data Foundation
+## Data Foundation
 
-StatsBomb Open Data からエージェント初期化に必要な全ドメインオブジェクトを構築するデータ基盤層を実装。
+Built the data layer for initializing all domain objects from StatsBomb Open Data.
 
 ### Added
 
 #### Data Collection
 
-- StatsBomb Open Data 取得層を実装（`collectors/statsbomb.py`）
-  - `get_competitions()` / `get_matches()` / `get_events()` / `get_lineups()` — statsbombpy ラッパー
-  - commit `2e172ab`
+- StatsBomb Open Data retrieval layer (`collectors/statsbomb.py`)
+  - `get_competitions()` / `get_matches()` / `get_events()` / `get_lineups()` via statsbombpy
 
 #### Domain Models
 
-- `PlayerAgent` ドメインモデルを追加（`agents/player.py`）
-  - `RoleFamily` / `BroadPosition` Enum、技術属性・適応属性・動的状態の全フィールド定義
-  - commit `676489e`
-- `TeamBaseline` ドメインモデルを追加（`agents/team.py`）
-  - StatsBomb 指標（xG/90・xGA/90・PPDA・progressive passes・possession）とリーグ立ち位置フィールド
-  - commit `0174f81`
-- `ManagerAgent` ドメインモデルを追加（`agents/manager.py`）
-  - StatsBomb 由来の戦術属性と LLM 由来の仮説属性（`style_stubbornness`）を分離して定義
-  - commit `f3166ac`
-- `Fixture` / `FixtureList` / `OpponentStrength` ドメインモデルを追加（`agents/fixture.py`）
-  - `frozen=True` — Branch A/B 並行比較で安全に共有できるよう不変設計
-  - commit `eb3134b`
-- `LeagueContext` ドメインモデルを追加（`agents/league.py`）
-  - StatsBomb 由来の事実フィールドと LLM 由来の仮説フィールドを明確に分離
-  - `frozen=True`、仮説フィールドは `dataclasses.replace()` で更新
-  - commit `8870709`
+- `PlayerAgent` (`agents/player.py`) — RoleFamily / BroadPosition enums, technical / adaptation / dynamic state fields
+- `TeamBaseline` (`agents/team.py`) — StatsBomb metrics (xG/90, xGA/90, PPDA, progressive passes, possession) and league standing
+- `ManagerAgent` (`agents/manager.py`) — StatsBomb-derived tactical attributes separated from LLM-derived hypothesis attributes
+- `Fixture` / `FixtureList` / `OpponentStrength` (`agents/fixture.py`) — Frozen for safe Branch A/B sharing
+- `LeagueContext` (`agents/league.py`) — Fact fields (StatsBomb) and hypothesis fields (LLM) clearly separated; frozen with `dataclasses.replace()` for updates
 
 #### Converters
 
-- スタッツ → `PlayerAgent` 属性変換を実装（`converters/stats_to_attributes.py`）
-  - 同リーグ・同シーズン内 percentile 正規化（出場時間フィルタ付き）
-  - commit `e56cde4`
-- チーム指標集計 → `TeamBaseline` ビルダーを実装（`converters/team_stats.py`）
-  - xG/xGA・PPDA・progressive passes・possession・`cultural_inertia`（在任期間から算出）
-  - commit `14bfae9`
-- 監督指標集計 → `ManagerAgent` ビルダーを実装（`converters/manager_stats.py`）
-  - 在任区間推定（`matches.home_managers` / `away_managers` から抽出）
-  - pressing intensity・possession preference・preferred formation を StatsBomb イベントから導出
-  - commit `422657b`
-- `FixtureList` / `OpponentStrength` ビルダーを実装（`converters/fixture_stats.py`）
-  - Elo レーティング算出（初期値 1500・K=20・match_week 昇順処理）
-  - commit `9446410`
+- Stats → `PlayerAgent` attributes (`converters/stats_to_attributes.py`) — Same-league percentile normalization with playing-time filter
+- Team metrics → `TeamBaseline` (`converters/team_stats.py`) — xG/xGA, PPDA, progressive passes, possession, cultural_inertia
+- Manager metrics → `ManagerAgent` (`converters/manager_stats.py`) — Tenure estimation, pressing intensity, possession preference, preferred formation from StatsBomb events
+- `FixtureList` / `OpponentStrength` (`converters/fixture_stats.py`) — Elo rating calculation (initial 1500, K=20)
 
 #### Storage
 
-- SQLite ストレージ層を実装（`storage/db.py`）
-  - `PlayerAgent` / `TeamBaseline` / `ManagerAgent` / `OpponentStrength` / `FixtureList` を保存・読み込み
-  - UPSERT（`ON CONFLICT DO UPDATE`）で全テーブルを冪等に更新
-  - `fixture_lists` ヘッダーテーブルにより「保存済み空 snapshot」と「未保存」を区別
-  - `save_fixture_list` は DELETE+INSERT をトランザクション化し途中失敗を防止
-  - commit `bd03ef1`
+- SQLite persistence layer (`storage/db.py`)
+  - UPSERT for all tables; `fixture_lists` header table distinguishes "saved empty" from "never saved"
+  - Transactional DELETE+INSERT for fixture list re-saves
 
 #### LLM Knowledge Query
 
-- `LLMClient` Protocol を定義（`llm/client.py`）
-  - 1メソッド（`complete`）のみでプロバイダー差し替え可能な設計
-- LLM 知識クエリを実装（`llm/knowledge_query.py`）
-  - `query_manager_style()` — `style_stubbornness`（float）・`preferred_formation` を仮説ラベルとして取得
-  - `query_league_characteristics()` — `pressing_level` / `physicality_level` / `tactical_complexity` を取得
-  - 不正 LLM 出力はモジュール定数のデフォルト値にフォールバック
-  - system / user ロール分離によるプロンプトインジェクション対策
-- システムプロンプトを外部ファイルで管理（`prompts/knowledge_query_v1.md`）
-  - commit `8870709`
+- `LLMClient` Protocol (`llm/client.py`) — Single `complete()` method for provider-agnostic interface
+- Knowledge query functions (`llm/knowledge_query.py`)
+  - `query_manager_style()` — style_stubbornness + preferred_formation as hypothesis labels
+  - `query_league_characteristics()` — pressing/physicality/tactical complexity levels
+  - Safe defaults on invalid LLM output; system/user role separation for prompt injection mitigation
+- System prompt managed as external file (`prompts/knowledge_query_v1.md`)
