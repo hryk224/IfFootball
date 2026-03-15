@@ -40,6 +40,11 @@ _PROVIDERS: dict[str, str] = {
 # Auto-detect order when LLM_PROVIDER is not set.
 _AUTO_DETECT_ORDER = ("openai", "anthropic", "gemini", "groq")
 
+# Provider-specific model env vars (checked before common LLM_MODEL).
+_PROVIDER_MODEL_ENVS: dict[str, str] = {
+    "openai": "OPENAI_MODEL",
+}
+
 
 def create_client(
     *,
@@ -48,11 +53,16 @@ def create_client(
 ) -> LLMClient | None:
     """Create an LLMClient from environment configuration.
 
+    Model resolution priority:
+        1. Explicit `model` argument
+        2. Provider-specific env (e.g., OPENAI_MODEL)
+        3. Common LLM_MODEL env
+        4. Provider default
+
     Args:
         provider: Explicit provider name. If None, uses LLM_PROVIDER env
                   var, then auto-detects from available API keys.
-        model:    Model name override. If None, uses LLM_MODEL env var,
-                  then provider-specific defaults.
+        model:    Model name override. If None, resolved from env vars.
 
     Returns:
         A configured LLMClient, or None if no provider is available.
@@ -66,10 +76,17 @@ def create_client(
     if not api_key:
         return None
 
-    resolved_model = model or os.environ.get("LLM_MODEL", "")
+    # Model resolution: arg > provider-specific env > common env > default.
+    provider_model_env = _PROVIDER_MODEL_ENVS.get(resolved_provider, "")
+    resolved_model = (
+        model
+        or (os.environ.get(provider_model_env, "") if provider_model_env else "")
+        or os.environ.get("LLM_MODEL", "")
+    )
 
     if resolved_provider == "openai":
-        return _create_openai(api_key, resolved_model)
+        base_url = os.environ.get("OPENAI_BASE_URL", "")
+        return _create_openai(api_key, resolved_model, base_url or None)
     elif resolved_provider == "anthropic":
         return _create_anthropic(api_key, resolved_model)
     elif resolved_provider == "gemini":
@@ -141,11 +158,15 @@ def _resolve_provider(explicit: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _create_openai(api_key: str, model: str) -> LLMClient | None:
+def _create_openai(
+    api_key: str, model: str, base_url: str | None = None
+) -> LLMClient | None:
     try:
         from iffootball.llm.providers.openai_provider import OpenAIClient
 
-        return OpenAIClient(api_key=api_key, model=model or "gpt-4o-mini")
+        return OpenAIClient(
+            api_key=api_key, model=model or "gpt-4o-mini", base_url=base_url
+        )
     except ImportError:
         return None
 

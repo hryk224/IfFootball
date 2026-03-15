@@ -88,6 +88,8 @@ GROQ_API_KEY=gsk_...
 
 対応プロバイダー: OpenAI, Anthropic, Google Gemini, Groq。LLM 未設定時はデータのみモードで動作し、シミュレーションデータから構造化レポートを生成します。
 
+**OpenAI 互換 API:** `OPENAI_BASE_URL` を設定すると OpenAI 互換エンドポイント（Azure OpenAI、ローカル推論サーバーなど）を使用できます。`OPENAI_MODEL` で OpenAI 固有のモデルを指定できます。
+
 **注意:** LLM 有効時は、シナリオデータ（チーム名、選手名、シミュレーション結果）が設定されたプロバイダーに送信されます。データの取り扱いは各プロバイダーのポリシーに従います。
 
 ## 使い方
