@@ -734,11 +734,11 @@ def _render_player_impact(
 
     if params.trigger_type == "transfer_in":
         st.caption(
-            "Transfer trigger: the new signing only exists in Branch B, so "
-            "they are shown separately below. Existing player rankings reflect "
-            "indirect effects of the squad addition."
+            "Transfer trigger: the new signing only exists in the 'with change' "
+            "branch, so they are shown separately below. Existing player rankings "
+            "reflect indirect effects of the squad addition."
         )
-        # Show new signing info from Branch B.
+        # Show new signing info (with-change branch only).
         _render_transfer_player_info(params)
 
     if not impacts:
@@ -771,7 +771,7 @@ def _render_transfer_player_info(params: SimulationParams) -> None:
         f"- **Available from:** week {params.trigger_week + 1} (simulated)\n"
         f"- **Attributes:** neutral (50th percentile) — no StatsBomb data\n"
         f"- **Note:** This is a hypothetical signing. The player only exists "
-        f"in Branch B and is not included in the A/B impact ranking above."
+        f"in the 'with change' branch only and is not included in the impact ranking above."
     )
 
 
