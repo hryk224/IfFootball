@@ -4,13 +4,23 @@ Pipeline:
   1. calc_minutes_played()      — minutes per player from match events
   2. aggregate_player_stats()   — per-90 metrics + xG variance per player
   3. normalize_percentile()     — rank within >=900-min cohort (0–100 scale)
-                                  + consistency from inverted xG std percentile
+                                  + consistency from position-group percentiles
   4. build_player_agents()      — assemble PlayerAgent list
 
-Consistency derivation (M2):
-  Per-match xG involvement is aggregated and its standard deviation computed.
-  Low std = high consistency: consistency = 100 - std_percentile.
-  Players with fewer than _MIN_MATCHES_FOR_CONSISTENCY matches keep 50.0.
+Consistency derivation (M3):
+  Position-group specific: each group uses a primary metric and a common
+  pass-count std as secondary. Inverted percentile within the group so
+  low variance = high consistency. Composite weight: 0.5 primary + 0.5 pass.
+  Players with fewer than _MIN_MATCHES_FOR_CONSISTENCY matches for a
+  metric fall back to the other metric alone, then to 50.0 if both fail.
+
+  Position groups and primary metrics:
+    GK: pass_std only (no xG/defensive relevance)
+    DF: def_std (Tackle + Interception per match)
+    MF: pass_std (involvement consistency)
+    FW: xg_std (attacking output consistency)
+
+  Composite weight 0.5/0.5 is provisional (M3). Subject to tuning.
 
 Position mapping:
   StatsBomb position_name -> RoleFamily -> BroadPosition
@@ -201,6 +211,40 @@ def aggregate_player_stats(events: pd.DataFrame) -> pd.DataFrame:
         .astype(float)
     )
 
+    # Per-player played-match index: all (player_id, match_id) pairs where
+    # the player has any event. Used to fill zero-event matches when computing
+    # per-match std for consistency.
+    played_matches = (
+        events.dropna(subset=["player_id"])
+        .groupby(["player_id", "match_id"])
+        .size()
+    )
+    played_match_index = played_matches.index
+
+    # Per-match counts for consistency calculation (pass, defensive).
+    # Reindex against played matches so zero-event matches count as 0.
+    pass_per_match_raw = (
+        events[events["type"] == "Pass"]
+        .dropna(subset=["player_id"])
+        .groupby(["player_id", "match_id"])
+        .size()
+        .astype(float)
+    )
+    pass_per_match = pass_per_match_raw.reindex(played_match_index, fill_value=0.0)
+    pass_std = pass_per_match.groupby("player_id").std(ddof=0).fillna(0.0)
+    pass_match_count = pass_per_match.groupby("player_id").size()
+
+    defensive_events = events[events["type"].isin(("Tackle", "Interception"))].copy()
+    def_per_match_raw = (
+        defensive_events.dropna(subset=["player_id"])
+        .groupby(["player_id", "match_id"])
+        .size()
+        .astype(float)
+    )
+    def_per_match = def_per_match_raw.reindex(played_match_index, fill_value=0.0)
+    def_std = def_per_match.groupby("player_id").std(ddof=0).fillna(0.0)
+    def_match_count = def_per_match.groupby("player_id").size()
+
     return pd.DataFrame(
         {
             "minutes": minutes,
@@ -210,13 +254,44 @@ def aggregate_player_stats(events: pd.DataFrame) -> pd.DataFrame:
             "passes_per90": _per90(passes, minutes),
             "xg_std": xg_std.reindex(minutes.index, fill_value=0.0),
             "xg_match_count": xg_match_count.reindex(minutes.index, fill_value=0),
+            "pass_std": pass_std.reindex(minutes.index, fill_value=0.0),
+            "pass_match_count": pass_match_count.reindex(minutes.index, fill_value=0),
+            "def_std": def_std.reindex(minutes.index, fill_value=0.0),
+            "def_match_count": def_match_count.reindex(minutes.index, fill_value=0),
         }
     )
+
+
+# Helper columns excluded from percentile normalization.
+_HELPER_COLS = frozenset({
+    "minutes",
+    "xg_std", "xg_match_count",
+    "pass_std", "pass_match_count",
+    "def_std", "def_match_count",
+    "consistency",
+})
+
+# Primary consistency metric per BroadPosition.
+# Each maps to (std_column, match_count_column).
+_PRIMARY_METRIC: dict[BroadPosition, tuple[str, str]] = {
+    BroadPosition.GK: ("pass_std", "pass_match_count"),
+    BroadPosition.DF: ("def_std", "def_match_count"),
+    BroadPosition.MF: ("pass_std", "pass_match_count"),
+    BroadPosition.FW: ("xg_std", "xg_match_count"),
+}
+
+# Secondary metric (common for all positions).
+_SECONDARY_METRIC = ("pass_std", "pass_match_count")
+
+# Composite weight: primary vs secondary. Provisional (M3).
+_PRIMARY_WEIGHT = 0.5
+_SECONDARY_WEIGHT = 0.5
 
 
 def normalize_percentile(
     stats: pd.DataFrame,
     min_minutes: float = _MIN_MINUTES_THRESHOLD,
+    position_map: dict[int, BroadPosition] | None = None,
 ) -> pd.DataFrame:
     """Percentile-normalise technical metrics within the qualified cohort.
 
@@ -225,15 +300,20 @@ def normalize_percentile(
 
     Percentile values are scaled to 0–100.
 
-    Consistency is derived from xg_std: low std = high consistency.
-    Players with fewer than _MIN_MATCHES_FOR_CONSISTENCY matches with
-    xG data keep the neutral 50.0 placeholder.
-    consistency = 100 - std_percentile (inverted: low variance = high score).
+    Consistency is derived from position-group specific metrics:
+      GK: pass_std, DF: def_std, MF: pass_std, FW: xg_std
+    with pass_std as common secondary. Percentile ranking is within
+    the position group. Low std = high consistency (inverted percentile).
+    Composite: 0.5 * primary + 0.5 * secondary (provisional M3 weight).
+
+    Fallback: if primary is unavailable, use secondary alone.
+    If both unavailable, use 50.0 neutral.
 
     Args:
-        stats: DataFrame from aggregate_player_stats() with 'minutes',
-               'xg_std', and 'xg_match_count' columns.
-        min_minutes: Minimum minutes to be included in the cohort (default 900).
+        stats:        DataFrame from aggregate_player_stats().
+        min_minutes:  Minimum minutes for cohort inclusion (default 900).
+        position_map: player_id -> BroadPosition mapping. When None,
+                      falls back to xg_std-only consistency (M2 compat).
 
     Returns:
         DataFrame with percentile scores (0–100) plus a 'consistency'
@@ -242,23 +322,105 @@ def normalize_percentile(
     qualified = stats[stats["minutes"] >= min_minutes].copy()
 
     # Standard percentile columns (exclude helper columns).
-    metric_cols = [
-        c
-        for c in qualified.columns
-        if c not in ("minutes", "xg_std", "xg_match_count", "consistency")
-    ]
+    metric_cols = [c for c in qualified.columns if c not in _HELPER_COLS]
     qualified[metric_cols] = qualified[metric_cols].rank(pct=True) * 100
 
-    # Consistency: inverted xg_std percentile for players with enough matches.
-    if "xg_std" in qualified.columns and "xg_match_count" in qualified.columns:
-        std_percentile = qualified["xg_std"].rank(pct=True) * 100
-        consistency = 100.0 - std_percentile
-        has_enough = qualified["xg_match_count"] >= _MIN_MATCHES_FOR_CONSISTENCY
-        qualified["consistency"] = consistency.where(has_enough, 50.0)
+    # Consistency calculation.
+    if position_map is not None:
+        qualified["consistency"] = _calc_group_consistency(qualified, position_map)
     else:
-        qualified["consistency"] = 50.0
+        # M2 fallback: xg_std only (no position info).
+        qualified["consistency"] = _calc_xg_only_consistency(qualified)
 
     return qualified
+
+
+def _calc_xg_only_consistency(qualified: pd.DataFrame) -> pd.Series:
+    """M2-compatible consistency from xg_std only."""
+    if "xg_std" in qualified.columns and "xg_match_count" in qualified.columns:
+        std_pct = qualified["xg_std"].rank(pct=True) * 100
+        consistency = 100.0 - std_pct
+        has_enough = qualified["xg_match_count"] >= _MIN_MATCHES_FOR_CONSISTENCY
+        return consistency.where(has_enough, 50.0)
+    return pd.Series(50.0, index=qualified.index)
+
+
+def _calc_group_consistency(
+    qualified: pd.DataFrame,
+    position_map: dict[int, BroadPosition],
+) -> pd.Series:
+    """Position-group consistency with primary + secondary composite."""
+    result = pd.Series(50.0, index=qualified.index)
+
+    # Assign broad_position to each player.
+    positions = pd.Series(
+        {pid: position_map.get(pid) for pid in qualified.index},
+        dtype=object,
+    )
+
+    for bp in BroadPosition:
+        group_mask = positions == bp
+        group = qualified[group_mask]
+        if group.empty:
+            continue
+
+        primary_col, primary_count_col = _PRIMARY_METRIC[bp]
+        secondary_col, secondary_count_col = _SECONDARY_METRIC
+
+        primary_scores = _inverted_group_percentile(
+            group, primary_col, primary_count_col
+        )
+        secondary_scores = _inverted_group_percentile(
+            group, secondary_col, secondary_count_col
+        )
+
+        # Composite with fallback.
+        for pid in group.index:
+            p_val = primary_scores.get(pid)
+            s_val = secondary_scores.get(pid)
+
+            if p_val is not None and s_val is not None:
+                result[pid] = _PRIMARY_WEIGHT * p_val + _SECONDARY_WEIGHT * s_val
+            elif p_val is not None:
+                result[pid] = p_val
+            elif s_val is not None:
+                result[pid] = s_val
+            # else: stays 50.0
+
+    return result
+
+
+def _inverted_group_percentile(
+    group: pd.DataFrame,
+    std_col: str,
+    count_col: str,
+) -> dict[int, float | None]:
+    """Compute inverted percentile within a position group.
+
+    Returns dict mapping player_id to score (0-100) or None if
+    the player doesn't have enough matches for the metric.
+    """
+    scores: dict[int, float | None] = {}
+    if std_col not in group.columns or count_col not in group.columns:
+        return {pid: None for pid in group.index}
+
+    has_enough = group[count_col] >= _MIN_MATCHES_FOR_CONSISTENCY
+    eligible = group[has_enough]
+
+    if eligible.empty:
+        return {pid: None for pid in group.index}
+
+    # Rank within the eligible subset.
+    pct = eligible[std_col].rank(pct=True) * 100
+    inverted = 100.0 - pct
+
+    for pid in group.index:
+        if pid in inverted.index:
+            scores[pid] = float(inverted[pid])
+        else:
+            scores[pid] = None
+
+    return scores
 
 
 # ---------------------------------------------------------------------------
@@ -337,8 +499,19 @@ def build_player_agents(
         ValueError: if a qualified player has no position data in events,
                     or if their representative position is not in SUPPORTED_POSITION_NAMES.
     """
-    normalised = normalize_percentile(aggregate_player_stats(events))
+    raw_stats = aggregate_player_stats(events)
     representative_positions = _derive_representative_positions(events)
+
+    # Build position map for group-level consistency.
+    position_map: dict[int, BroadPosition] = {}
+    for pid, pos_name in representative_positions.items():
+        try:
+            role = to_role_family(pos_name)
+            position_map[pid] = to_broad_position(role)
+        except ValueError:
+            pass  # Unknown position; will be caught later in agent construction.
+
+    normalised = normalize_percentile(raw_stats, position_map=position_map)
 
     # Build player_id -> player_name from lineups (identity source).
     player_names: dict[int, str] = {}
