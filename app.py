@@ -251,6 +251,8 @@ def _render_input() -> SimulationParams | None:
     st.subheader("What if...?")
     st.caption("Premier League 2015-16")
 
+    # Render all preset cards first, then check which was pressed.
+    selected_preset: dict[str, Any] | None = None
     cols = st.columns(len(_PRESETS))
     for i, (col, preset) in enumerate(zip(cols, _PRESETS)):
         with col:
@@ -258,17 +260,20 @@ def _render_input() -> SimulationParams | None:
                 st.markdown(f"**{preset['label']}**")
                 st.caption(f"Week {preset['trigger_week']}")
                 if st.button("Run", key=f"preset_{i}", use_container_width=True):
-                    return SimulationParams(
-                        competition_id=2,
-                        season_id=27,
-                        team_name=preset["team_name"],
-                        manager_name=preset["manager_name"],
-                        trigger_week=preset["trigger_week"],
-                        n_runs=n_runs,
-                        seed=seed,
-                        trigger_type="manager_change",
-                        incoming_manager_name=preset["incoming_manager_name"],
-                    )
+                    selected_preset = preset
+
+    if selected_preset is not None:
+        return SimulationParams(
+            competition_id=2,
+            season_id=27,
+            team_name=selected_preset["team_name"],
+            manager_name=selected_preset["manager_name"],
+            trigger_week=selected_preset["trigger_week"],
+            n_runs=n_runs,
+            seed=seed,
+            trigger_type="manager_change",
+            incoming_manager_name=selected_preset["incoming_manager_name"],
+        )
 
     # --- Custom (experimental) ---
     with st.expander("Custom scenario (experimental)"):
