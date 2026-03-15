@@ -37,12 +37,12 @@ _FAKE_PROMPT = "You are a football simulation analyst."
 
 _SAMPLE_REPORT = """## Summary
 
-The manager change resulted in a slight points decrease. [fact]
+The manager change resulted in a slight points decrease. [data]
 
 ## Key Differences
 
-- Mean points: -1.20 [fact]
-- form_drop events increased by 0.8 per run [fact]
+- Mean points: -1.20 [data]
+- form_drop events increased by 0.8 per run [data]
 
 ## Causal Chain
 
@@ -50,7 +50,7 @@ A bench_streak turning point caused the player to resist. [analysis]
 
 ## Player Impact
 
-Player 7 showed the largest state change with form dropping by 0.15. [fact]
+Player 7 showed the largest state change with form dropping by 0.15. [data]
 
 ## Limitations
 

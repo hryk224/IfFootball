@@ -940,7 +940,7 @@ _DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
         "mean_points": "Mean total points",
         "no_change": "no change",
         "with_change": "with change",
-        "fact": "fact",
+        "fact": "data",
         "causal_chain": "Causal Chain",
         "causal_chain_summary": (
             "Causal chain summary from cascade event frequencies "
@@ -957,7 +957,7 @@ _DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
         "mean_points": "平均総勝ち点",
         "no_change": "変更なし",
         "with_change": "変更あり",
-        "fact": "事実",
+        "fact": "データ",
         "causal_chain": "因果連鎖",
         "causal_chain_summary": (
             "カスケードイベント頻度からの因果連鎖サマリー"

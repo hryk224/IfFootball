@@ -91,7 +91,7 @@ Added visualization, LLM report generation, and Streamlit UI for end-to-end what
 #### LLM Output Layer
 
 - Turning point action explanation (`llm/action_explanation.py` + `prompts/action_explanation_v1.md`)
-  - fact / analysis / hypothesis labels with source_types for data provenance
+  - data / analysis / hypothesis labels with source_types for data provenance
 - Structured report generation (`llm/report_generation.py` + `prompts/report_generation_v1.md`)
   - 5 fixed sections (Summary / Key Differences / Causal Chain / Player Impact / Limitations)
   - Section heading validation with structured fallback on malformed LLM output

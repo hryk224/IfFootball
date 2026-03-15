@@ -49,7 +49,7 @@ IfFootball is a **what-if simulation tool**, not a prediction engine. Results re
 - **Player Transfer** _(Experimental)_ — Add a player to the squad with role-based trust initialization
 - **A/B Comparison** — Poisson match model, weekly state updates (fatigue, trust, tactical understanding), turning point detection with cascade event tracking
 - **Visualization** — Team and player radar charts comparing Branch A/B outcomes
-- **LLM Reports** — Structured comparison reports with fact / analysis / hypothesis labels and source classification
+- **LLM Reports** — Structured comparison reports with data / analysis / hypothesis labels and source classification
 - **Streamlit UI** — Single-page app for end-to-end simulation
 
 ### How It Works
@@ -143,7 +143,7 @@ Runs the Van Gaal dismissal scenario (Manchester United, week 29, 20 runs) and o
 - **StatsBomb alignment** — All metrics follow StatsBomb definitions. No custom metric inventions
 - **LLM as explanation layer** — LLM is limited to knowledge queries, action explanations, and report generation. It never makes simulation decisions
 - **Transparent parameters** — Every simulation parameter is documented with its definition, value, and rationale in [simulation-rules.md](docs/simulation-rules.md)
-- **Fact / Analysis / Hypothesis labels** — All outputs distinguish between data-backed facts, model-derived analysis, and speculative hypotheses
+- **Data / Analysis / Hypothesis labels** — All outputs distinguish between simulation data, model-derived analysis, and speculative hypotheses
 
 ## Tests
 

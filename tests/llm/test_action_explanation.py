@@ -110,10 +110,10 @@ class TestParseResponse:
         assert result.confidence_note == "Based on rule-based model"
 
     def test_missing_confidence_note(self) -> None:
-        raw = _json(explanation="Adapted well.", label="fact")
+        raw = _json(explanation="Adapted well.", label="data")
         result = _parse_response(raw)
         assert result.explanation == "Adapted well."
-        assert result.label == "fact"
+        assert result.label == "data"
         assert result.confidence_note == ""
 
     def test_invalid_label_falls_back(self) -> None:
@@ -141,7 +141,7 @@ class TestParseResponse:
         assert result.explanation == _DEFAULT_EXPLANATION
 
     def test_all_valid_labels_accepted(self) -> None:
-        for label in ("fact", "analysis", "hypothesis"):
+        for label in ("data", "analysis", "hypothesis"):
             raw = _json(explanation="Test.", label=label)
             result = _parse_response(raw)
             assert result.label == label
@@ -244,7 +244,7 @@ class TestExplainAction:
         assert "resistance" in result.explanation.lower()
 
     def test_system_user_role_separation(self) -> None:
-        client = FakeLLMClient(_json(explanation="Ok.", label="fact"))
+        client = FakeLLMClient(_json(explanation="Ok.", label="data"))
         explain_action(
             client,
             _make_player(),
@@ -260,7 +260,7 @@ class TestExplainAction:
         assert messages[1]["role"] == "user"
 
     def test_player_name_not_in_system_prompt(self) -> None:
-        client = FakeLLMClient(_json(explanation="Ok.", label="fact"))
+        client = FakeLLMClient(_json(explanation="Ok.", label="data"))
         explain_action(
             client,
             _make_player(),
@@ -274,7 +274,7 @@ class TestExplainAction:
         assert "Test Player" not in system_content
 
     def test_player_name_in_user_message(self) -> None:
-        client = FakeLLMClient(_json(explanation="Ok.", label="fact"))
+        client = FakeLLMClient(_json(explanation="Ok.", label="data"))
         explain_action(
             client,
             _make_player(),

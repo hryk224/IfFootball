@@ -2,7 +2,7 @@
 
 Generates a short explanation of why a player took a specific action
 (adapt / resist / transfer) at a turning point. The explanation includes
-a fact/analysis/hypothesis label for downstream report generation.
+a data/analysis/hypothesis label for downstream report generation.
 
 Pipeline:
   1. Load system prompt from prompts/action_explanation_v1.md.
@@ -53,7 +53,7 @@ def _load_system_prompt(path: Path | None = None) -> str:
 # Constants
 # ---------------------------------------------------------------------------
 
-_VALID_LABELS = frozenset({"fact", "analysis", "hypothesis"})
+_VALID_LABELS = frozenset({"data", "analysis", "hypothesis"})
 _DEFAULT_LABEL = "hypothesis"
 _DEFAULT_EXPLANATION = "Unable to generate structured explanation."
 
@@ -69,7 +69,7 @@ class ActionExplanationResult:
 
     Attributes:
         explanation:     1-2 sentence explanation with data references.
-        label:           Classification: "fact", "analysis", or "hypothesis".
+        label:           Classification: "data", "analysis", or "hypothesis".
         confidence_note: Optional note on uncertainty or data limitations.
     """
 

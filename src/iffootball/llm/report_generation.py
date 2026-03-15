@@ -2,7 +2,7 @@
 
 Generates a structured Markdown report from simulation comparison results,
 action explanations, and player impact data. The report includes labelled
-sections ([fact] / [analysis] / [hypothesis]) and a limitations section
+sections ([data] / [analysis] / [hypothesis]) and a limitations section
 for known system constraints.
 
 Pipeline:
@@ -146,7 +146,7 @@ class ActionExplanationEntry:
         tp_type:         Turning point type (e.g. "bench_streak").
         action:          Sampled action ("adapt" / "resist" / "transfer").
         explanation:     LLM-generated explanation text.
-        label:           "fact" / "analysis" / "hypothesis".
+        label:           "data" / "analysis" / "hypothesis".
         confidence_note: Optional uncertainty note.
     """
 
