@@ -50,16 +50,22 @@ class MatchResult:
     """Result of a single simulated match.
 
     Attributes:
-        home_goals:    Goals scored by the home team.
-        away_goals:    Goals scored by the away team.
-        is_home:       Whether the simulated team played at home.
-        points_earned: Points earned by the simulated team (3/1/0).
+        home_goals:             Goals scored by the home team.
+        away_goals:             Goals scored by the away team.
+        is_home:                Whether the simulated team played at home.
+        points_earned:          Points earned by the simulated team (3/1/0).
+        expected_goals_for:     Poisson lambda used for the simulated team's
+                                goals (after home advantage adjustment).
+        expected_goals_against: Poisson lambda used for the opponent's goals
+                                (after home advantage adjustment).
     """
 
     home_goals: int
     away_goals: int
     is_home: bool
     points_earned: int
+    expected_goals_for: float
+    expected_goals_against: float
 
 
 def calc_agent_state_factor(
@@ -158,4 +164,6 @@ def simulate_match(
         away_goals=away_goals,
         is_home=fixture.is_home,
         points_earned=points,
+        expected_goals_for=expected_for,
+        expected_goals_against=expected_against,
     )
