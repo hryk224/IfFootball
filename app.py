@@ -91,11 +91,25 @@ def _load_targets() -> list[dict[str, Any]]:
     return data["competitions"]  # type: ignore[no-any-return]
 
 
+# Known competition names for human-readable display.
+_COMPETITION_NAMES: dict[int, str] = {
+    2: "Premier League",
+    11: "La Liga",
+}
+
+# Known season labels.
+_SEASON_NAMES: dict[int, str] = {
+    27: "2015-16",
+}
+
+
 def _competition_label(target: dict[str, Any]) -> str:
     """Human-readable label for a competition target."""
-    comp_id = target["competition_id"]
-    season_id = target["season_id"]
-    return f"Competition {comp_id} / Season {season_id}"
+    comp_id = int(target["competition_id"])
+    season_id = int(target["season_id"])
+    comp_name = _COMPETITION_NAMES.get(comp_id, f"Competition {comp_id}")
+    season_name = _SEASON_NAMES.get(season_id, f"Season {season_id}")
+    return f"{comp_name} {season_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -226,19 +240,18 @@ def _render_sidebar() -> SimulationParams | None:
             or "starter"
         )
 
-    st.sidebar.divider()
-    st.sidebar.subheader("Simulation Settings")
-
-    n_runs = int(
-        st.sidebar.number_input(
-            "Number of Runs", min_value=1, max_value=100, value=_DEFAULT_N_RUNS
+    # Advanced settings in a collapsible section.
+    with st.sidebar.expander("Advanced Settings"):
+        n_runs = int(
+            st.number_input(
+                "Number of Runs", min_value=1, max_value=100, value=_DEFAULT_N_RUNS
+            )
         )
-    )
-    seed = int(
-        st.sidebar.number_input(
-            "Random Seed", min_value=0, max_value=99999, value=_DEFAULT_SEED
+        seed = int(
+            st.number_input(
+                "Random Seed", min_value=0, max_value=99999, value=_DEFAULT_SEED
+            )
         )
-    )
 
     # LLM status display.
     try:
@@ -352,8 +365,9 @@ def _run_pipeline(params: SimulationParams) -> None:
     # 5. Resolve LLM client (if configured).
     llm_client = _get_llm_client()
 
-    # 6. Display results.
+    # 6. Display results — conclusion first.
     _render_delta_metrics(comparison)
+    _render_report(comparison, params, impacts, llm_client)
     if params.trigger_type == "manager_change":
         _render_team_radar(comparison, init_result, incoming_profile)
     else:
@@ -363,7 +377,6 @@ def _run_pipeline(params: SimulationParams) -> None:
             "Tactical estimates are manager-driven and unchanged by player transfers."
         )
     _render_player_impact(impacts, params)
-    _render_report(comparison, params, impacts, llm_client)
 
     progress.progress(100, text="Complete.")
 
@@ -587,10 +600,17 @@ def _render_data_report(report_input: ReportInput) -> None:
                 f"{a.explanation} [{a.label}]"
             )
     else:
-        st.write(
-            "No action explanations available. "
-            "LLM-based causal chain analysis requires an LLMClient configuration."
-        )
+        # Data-driven summary from cascade event diff when LLM is unavailable.
+        if report_input.cascade_count_diff:
+            st.write(
+                "Causal chain summary from cascade event frequencies "
+                "(LLM-based detailed analysis available with API key):"
+            )
+            for et, diff in report_input.cascade_count_diff.items():
+                direction = "increased" if diff > 0 else "decreased"
+                st.write(f"- **{et}** {direction} by {abs(diff):.1f} per run [fact]")
+        else:
+            st.write("No cascade events recorded in this simulation.")
 
     st.subheader("Limitations")
     for limitation in report_input.limitations:
