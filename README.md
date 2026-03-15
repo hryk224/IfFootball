@@ -19,6 +19,14 @@ uv sync --extra dev
 npm install
 ```
 
+To enable LLM-generated reports (optional):
+
+```bash
+uv sync --extra dev --extra llm
+```
+
+Without `--extra llm`, the app runs in data-only mode.
+
 ## Usage
 
 ### Streamlit UI
