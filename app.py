@@ -404,20 +404,21 @@ def _render_input() -> SimulationParams | None:
 # ---------------------------------------------------------------------------
 
 
-def _team_cache_path(team_name: str) -> Path:
-    """Return the per-team cache DB path."""
+def _team_cache_path(team_name: str, trigger_week: int) -> Path:
+    """Return the per-team+week cache DB path."""
     safe_name = team_name.replace(" ", "_").lower()
-    return _CACHE_DIR / f"{safe_name}.db"
+    return _CACHE_DIR / f"{safe_name}_w{trigger_week}.db"
 
 
 def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
-    """Try to load initialization data from per-team demo cache DB.
+    """Try to load initialization data from per-scenario demo cache DB.
 
-    Returns None if cache doesn't exist or required data is missing.
-    Manager is resolved from the cached data (team-based), not from
-    user input, to avoid exact-name mismatch issues.
+    Cache is keyed by team_name + trigger_week. Returns None if cache
+    file doesn't exist or any required component (player_agents,
+    team_baseline, manager_agent, fixture_list, opponent_strengths,
+    league_context) is missing. Manager lookup requires exact name match.
     """
-    cache_path = _team_cache_path(params.team_name)
+    cache_path = _team_cache_path(params.team_name, params.trigger_week)
     if not cache_path.exists():
         return None
 
