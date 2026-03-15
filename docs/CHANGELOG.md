@@ -1,5 +1,100 @@
 # Changelog
 
+## M4 — Backtest
+
+Van Gaal 仮想解任シナリオ（Manchester United 2015-16, week 29）のバックテストを実行し、評価結果と課題を記録。
+
+### Added
+
+- `docs/simulation-rules.md` — 全 TOML パラメータの定義・根拠・参照元を記述
+- `scripts/backtest_van_gaal.py` — バックテスト実行スクリプト（initialize → run_comparison → player_impact → JSON 出力）
+
+### Findings
+
+- Points delta: +0.5（B-A, 20 runs）— 微増傾向だが std 3.5 に対して統計的に不確実
+- Cascade event 過剰発火: form_drop +29.9/run、tactical_confusion +36.0/run（9 試合で）
+- tactical_understanding が全員一律 -0.250（個人差が反映されていない）
+- 課題詳細は `private/docs/implementation-notes.md` M4 セクションに記録
+
+---
+
+## M3 — Output Layer
+
+M2 のシミュレーション結果を可視化・レポート化し、Streamlit UI で一気通貫の操作を可能にした。
+
+### Added
+
+#### Trigger Enhancement
+
+- `ManagerChangeTrigger.incoming_profile` — 後任監督の戦術プロファイルをオプションで指定可能に
+- `TransferInTrigger.player` — 移籍選手の PlayerAgent を payload として保持、engine で squad に追加
+  - role ベースの trust 初期化（starter=0.7, rotation=0.5, squad=0.3）
+  - deepcopy で branch isolation を保証
+
+#### Visualization
+
+- チーム差分レーダーチャート（`visualization/radar_chart.py` + `radar_data.py`）
+  - 5 軸: xG/90（simulation output）、xGA/90（fixed baseline）、PPDA / Possession / Prog Passes（tactical estimates）
+  - league average 基準の 0-1 正規化、PPDA / xGA 反転
+- 選手差分レーダーチャート（`visualization/player_radar.py` + `player_impact.py`）
+  - 4 軸: Form / Fatigue（反転）/ Tactical Understanding / Manager Trust
+  - player_id ベースのマッチング、impact score（per-run 差分絶対値の平均）でランキング
+- 戦術推定モジュール（`visualization/tactical_estimate.py`）
+  - manager profile → PPDA / Possession / Progressive Passes の推定（league average 回帰 + formation 補正）
+
+#### LLM Output Layer
+
+- TP 行動説明（`llm/action_explanation.py` + `prompts/action_explanation_v1.md`）
+  - fact / analysis / hypothesis ラベル付き、source_types で data provenance を明示
+- 構造化レポート生成（`llm/report_generation.py` + `prompts/report_generation_v1.md`）
+  - 5 セクション固定（Summary / Key Differences / Causal Chain / Player Impact / Limitations）
+  - LLM 出力のセクション検証、欠落時は構造化フォールバック
+- 自然言語入力構造化（`llm/input_structuring.py` + `prompts/input_structuring_v1.md`）
+  - manager_change / player_transfer_in の 2 trigger type をパース
+  - enum フィールドのデフォルト適用、applied_at 型検証
+
+#### UI
+
+- Streamlit アプリ（`app.py`）
+  - サイドバー: competition/team/manager/trigger_week/incoming manager/N runs/seed
+  - メインエリア: delta metrics・team radar・player impact radars・structured report
+
+#### Storage
+
+- `ComparisonMeta` / `ComparisonResultWithMeta` — rng_seed / n_runs / trigger_summary / created_at (UTC ISO 8601) を永続化
+- cascade*events の run_id 命名規約をドキュメント化（`{branch}*{index}`）
+
+### Changed
+
+#### Config Externalization
+
+- `RuleBasedHandler` の action distribution をハードコードから `turning_points.toml` の `[action_distribution]` セクションに外部化
+  - 3 条件（bench_streak_low_trust / low_understanding / default）、3 アクション必須バリデーション
+
+#### Cascade Taxonomy
+
+- `VALID_EVENT_TYPES` に 3 type 追加: `adaptation_progress` / `tactical_confusion`（使用開始）/ `squad_unrest`
+- engine: adapt → `adaptation_progress` 記録、low_understanding + adapt → `tactical_confusion` 併記、2+ resist/week → `squad_unrest`
+
+#### Consistency Model
+
+- `PlayerAgent.consistency` をポジショングループ別複合指標に拡張
+  - GK/MF: pass_std、DF: def_std（Tackle+Interception）、FW: xg_std
+  - 共通副指標: pass_std、複合重み 0.5/0.5（暫定）
+  - グループ内 percentile、ゼロイベント試合を含む真の per-match variance
+
+#### Match Result
+
+- `MatchResult` に `expected_goals_for` / `expected_goals_against` フィールド追加
+
+#### Dependencies
+
+- `matplotlib==3.10.8` 追加
+- `streamlit==1.45.0` 追加
+- `pandas` 3.0.1 → 2.3.3 にダウングレード（streamlit 互換）
+
+---
+
 ## M2 — Simulation Foundation
 
 M1 コンポーネントを初期化パイプラインで接続し、週次シミュレーションエンジン・Branch A/B 比較・結果永続化までを実装。
