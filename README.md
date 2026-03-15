@@ -113,7 +113,9 @@ GROQ_API_KEY=gsk_...
 
 Supported providers: OpenAI, Anthropic, Google Gemini, Groq. Without LLM configuration, the app runs in data-only mode with structured reports generated from simulation data.
 
-**OpenAI-compatible APIs:** Set `OPENAI_BASE_URL` to use any OpenAI-compatible endpoint (e.g., Azure OpenAI, local inference servers). Use `OPENAI_MODEL` to override the model for OpenAI specifically.
+**Model override:** Each provider has its own model env var (`OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL`). If unset, provider defaults are used.
+
+**OpenAI-compatible APIs:** Set `OPENAI_BASE_URL` to use any OpenAI-compatible endpoint (e.g., Azure OpenAI, local inference servers).
 
 **Note:** When LLM is enabled, scenario data (team names, player names, simulation results) is sent to the configured provider. Data handling follows the provider's policy.
 

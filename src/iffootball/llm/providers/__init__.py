@@ -40,9 +40,13 @@ _PROVIDERS: dict[str, str] = {
 # Auto-detect order when LLM_PROVIDER is not set.
 _AUTO_DETECT_ORDER = ("openai", "anthropic", "gemini", "groq")
 
-# Provider-specific model env vars (checked before common LLM_MODEL).
+# Provider-specific model env vars. Each provider resolves its model
+# from its own env var. There is no shared LLM_MODEL fallback.
 _PROVIDER_MODEL_ENVS: dict[str, str] = {
     "openai": "OPENAI_MODEL",
+    "anthropic": "ANTHROPIC_MODEL",
+    "gemini": "GEMINI_MODEL",
+    "groq": "GROQ_MODEL",
 }
 
 
@@ -55,9 +59,9 @@ def create_client(
 
     Model resolution priority:
         1. Explicit `model` argument
-        2. Provider-specific env (e.g., OPENAI_MODEL)
-        3. Common LLM_MODEL env
-        4. Provider default
+        2. Provider-specific env (OPENAI_MODEL / ANTHROPIC_MODEL /
+           GEMINI_MODEL / GROQ_MODEL)
+        3. Provider default (hardcoded per provider)
 
     Args:
         provider: Explicit provider name. If None, uses LLM_PROVIDER env
@@ -76,13 +80,9 @@ def create_client(
     if not api_key:
         return None
 
-    # Model resolution: arg > provider-specific env > common env > default.
+    # Model resolution: arg > provider-specific env > provider default.
     provider_model_env = _PROVIDER_MODEL_ENVS.get(resolved_provider, "")
-    resolved_model = (
-        model
-        or (os.environ.get(provider_model_env, "") if provider_model_env else "")
-        or os.environ.get("LLM_MODEL", "")
-    )
+    resolved_model = model or os.environ.get(provider_model_env, "")
 
     if resolved_provider == "openai":
         base_url = os.environ.get("OPENAI_BASE_URL", "")
