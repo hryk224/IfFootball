@@ -3,6 +3,7 @@
     "format:md": "prettier --write '**/*.md'"
   },
   "devDependencies": {
-    "prettier": "3.8.1"
+    "prettier": "3.8.1",
+    "pyright": "1.1.408"
   }
 }
