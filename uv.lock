@@ -631,8 +631,12 @@ name = "iffootball"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
+    { name = "google-genai" },
+    { name = "groq" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "openai" },
     { name = "pandas" },
     { name = "python-dotenv" },
     { name = "statsbombpy" },
@@ -646,22 +650,16 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
-llm = [
-    { name = "anthropic" },
-    { name = "google-genai" },
-    { name = "groq" },
-    { name = "openai" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'llm'", specifier = "==0.84.0" },
-    { name = "google-genai", marker = "extra == 'llm'", specifier = "==1.67.0" },
-    { name = "groq", marker = "extra == 'llm'", specifier = "==1.1.1" },
+    { name = "anthropic", specifier = "==0.84.0" },
+    { name = "google-genai", specifier = "==1.67.0" },
+    { name = "groq", specifier = "==1.1.1" },
     { name = "matplotlib", specifier = "==3.10.8" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==1.19.1" },
     { name = "numpy", specifier = "==2.4.2" },
-    { name = "openai", marker = "extra == 'llm'", specifier = "==2.28.0" },
+    { name = "openai", specifier = "==2.28.0" },
     { name = "pandas", specifier = "==2.3.3" },
     { name = "pandas-stubs", marker = "extra == 'dev'", specifier = "==3.0.0.260204" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==9.0.2" },
@@ -670,7 +668,7 @@ requires-dist = [
     { name = "statsbombpy", specifier = "==1.17.0" },
     { name = "streamlit", specifier = "==1.45.0" },
 ]
-provides-extras = ["dev", "llm"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "inflect"

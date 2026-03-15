@@ -7,11 +7,11 @@ Thank you for your interest in contributing to IfFootball.
 ```bash
 git clone https://github.com/hryk224/IfFootball.git
 cd IfFootball
-uv sync --extra dev --extra llm
+uv sync --extra dev
 npm install
 ```
 
-The `llm` extra installs LLM provider SDKs (OpenAI, Anthropic, Gemini, Groq). Omit `--extra llm` to work without LLM features (data-only mode).
+LLM provider SDKs (OpenAI, Anthropic, Gemini, Groq) are included in core dependencies. Without an API key configured, the app runs in data-only mode.
 
 ## Development Workflow
 
@@ -66,7 +66,7 @@ app.py            # Streamlit UI
 1. Create `src/iffootball/llm/providers/<name>_provider.py`
 2. Implement the `LLMClient` protocol (single `complete()` method)
 3. Register in `src/iffootball/llm/providers/__init__.py`
-4. Add the SDK to `pyproject.toml` `[project.optional-dependencies] llm`
+4. Add the SDK to `pyproject.toml` `[project].dependencies`
 
 ## Supply Chain Policy
 

@@ -98,13 +98,7 @@ npm install                    # Markdown フォーマット用（任意）
 
 ### LLM セットアップ（任意）
 
-LLM によるレポート生成を有効にするには、プロバイダー SDK をインストールし API キーを設定します:
-
-```bash
-uv sync --extra dev --extra llm
-```
-
-`.env` に以下のいずれかを設定:
+LLM プロバイダー SDK は通常依存に含まれています。LLM によるレポート生成を有効にするには、`.env` に API キーを設定します:
 
 ```
 OPENAI_API_KEY=sk-...

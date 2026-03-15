@@ -98,13 +98,7 @@ npm install                    # for Markdown formatting (optional)
 
 ### LLM Setup (Optional)
 
-To enable LLM-generated reports, install provider SDKs and configure an API key:
-
-```bash
-uv sync --extra dev --extra llm
-```
-
-Then edit `.env` with one of:
+LLM provider SDKs are included in core dependencies. To enable LLM-generated reports, configure an API key in `.env`:
 
 ```
 OPENAI_API_KEY=sk-...
