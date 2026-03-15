@@ -1,5 +1,30 @@
 # Changelog
 
+## Structured Explanation Layer
+
+Added a structured explanation layer that separates "what to say" from "how to present it" in the report generation pipeline. This provides a typed intermediate representation for downstream features (report planning, limitation disclosure, validation signals).
+
+### Added
+
+- `StructuredExplanation` schema with `ScenarioDescriptor`, `EvidenceItem`, `DifferenceHighlight`, `CausalStep`, `PlayerImpactChange`, `PlayerImpactSummary`
+- `build_skeleton()` constructs explanation structure from simulation outputs with all structural fields (step_id, label, source, depth) set by code; statement fields left empty for LLM completion
+- `complete_skeleton()` LLM-based statement completion with key-based merge (step_id / metric_name / player_name) to tolerate LLM reordering
+- `LimitationsDisclosure` two-layer limitation model replacing plain-string confidence_notes
+  - System limitations: 5 fixed model-level constraints with bilingual messages (en/ja), category, and severity
+  - Scenario limitations: condition-based generation (chain depth >= 3, non-simulation evidence ratio >= 50%)
+- `structured_to_report_input()` adapter for backward compatibility with existing report generation pipeline
+- Structured explanation completion prompt (`prompts/structured_explanation_v1.md`)
+- Sample JSON for Man Utd Van Gaal → Mourinho scenario (`docs/samples/`)
+- Evidence label inference (`infer_label()`) and source tracking (`simulation_output` / `rule_based_model` / `llm_knowledge`)
+
+### Changed
+
+- LLM SDKs (openai, anthropic, google-genai, groq) moved from `llm` optional extra to core dependencies — eliminates deployment divergence on Streamlit Community Cloud
+- Limitations are code-generated and LLM-immutable; LLM can only fill statement text fields
+- README / CONTRIBUTING updated to reflect SDK inclusion in core dependencies (API key remains optional for data-only mode)
+
+---
+
 ## Live Demo
 
 Deployed the IfFootball Live Demo to Streamlit Community Cloud with guided scenario UI, LLM report generation, and Japanese language support.
