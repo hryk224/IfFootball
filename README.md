@@ -2,19 +2,48 @@
 
 [日本語版はこちら](README.ja.md)
 
-Football "what-if" simulator powered by StatsBomb Open Data. Explore how managerial changes and player transfers might have altered a team's season through rule-based causal simulation and LLM-generated analysis.
+> _"What if Van Gaal had been dismissed after match week 29?"_
+
+Simulate how managerial changes and player transfers might have altered a football team's season. IfFootball uses StatsBomb Open Data, rule-based causal simulation, and optional LLM-generated analysis. **No API key required to run — LLM is optional.**
+
+<!-- Screenshot placeholder: replace with actual UI screenshot -->
+<!-- ![IfFootball UI](docs/images/screenshot.png) -->
+
+## Quick Start
+
+```bash
+git clone https://github.com/hryk224/IfFootball.git
+cd IfFootball
+uv sync --extra dev
+uv run streamlit run app.py
+```
+
+Select **Manchester United**, enter **Louis van Gaal** as the current manager, set trigger week to **29**, and click **Run Simulation**. Results appear in ~2-5 minutes (StatsBomb API fetch on first run).
+
+No `.env` file, no API key, no LLM setup needed for the basic experience.
+
+## Example Output
+
+Backtest: Manchester United — Van Gaal dismissal at week 29 (Premier League 2015-16, 20 simulation runs):
+
+```
+Branch A (no change):  12.2 points (mean)  ±3.5
+Branch B (dismissed):  12.8 points (mean)  ±3.2
+Delta (B - A):         +0.5 points
+
+Top 3 impacted players:
+  1. Michael Carrick     (impact: 0.683) — fatigue +0.19, trust +0.13
+  2. Jesse Lingard       (impact: 0.595) — form -0.09, fatigue -0.15
+  3. Ander Herrera       (impact: 0.584) — form -0.12, understanding -0.25
+```
+
+The simulation shows a slight positive trend (+0.5 points) but within statistical uncertainty. All players experienced a tactical understanding reset (-0.25), reflecting the adaptation period after a managerial change. Full analysis in the Streamlit UI includes radar charts and structured reports.
 
 ## Disclaimer
 
 IfFootball is a **what-if simulation tool**, not a prediction engine. Results represent theoretical outcomes under specified rule-based parameters, not predictions of actual events. All simulation parameters are provisional and documented with their rationale in [simulation-rules.md](docs/simulation-rules.md#known-limitations). The authors are not responsible for any decisions made based on this software or its outputs.
 
-## Overview
-
-IfFootball runs parallel simulations — one where nothing changes (Branch A) and one where a trigger is applied (Branch B) — then compares the outcomes across N stochastic runs.
-
-**Example scenario:** _"What if Manchester United dismissed Van Gaal after match week 29 of the 2015-16 season?"_
-
-### Key Features
+## Key Features
 
 - **Manager Change** — Simulate mid-season dismissal with tactical profile reset, squad trust recalibration, and adaptation curves
 - **Player Transfer** _(Experimental)_ — Add a player to the squad with role-based trust initialization
@@ -51,23 +80,19 @@ Currently supported competitions (from `config/targets.toml`):
 | Premier League | 2015-16 | Manchester United, Manchester City, Arsenal, Liverpool, Chelsea, Tottenham Hotspur, Leicester City |
 | La Liga        | 2015-16 | Real Madrid, Barcelona, Atletico Madrid                                                            |
 
-## Setup
+## Full Setup
 
-### Requirements
-
-- Python >= 3.11
-- [uv](https://docs.astral.sh/uv/) (package manager)
-- Node.js (for Markdown formatting only)
-
-### Installation
+The Quick Start above covers the minimal path. This section adds development tools and LLM configuration.
 
 ```bash
 git clone https://github.com/hryk224/IfFootball.git
 cd IfFootball
 cp .env.example .env
 uv sync --extra dev
-npm install
+npm install                    # for Markdown formatting (optional)
 ```
+
+**Requirements:** Python >= 3.11, [uv](https://docs.astral.sh/uv/), Node.js (optional, for `npm run format:md` only).
 
 ### LLM Setup (Optional)
 
@@ -121,7 +146,7 @@ Runs the Van Gaal dismissal scenario (Manchester United, week 29, 20 runs) and o
 ## Tests
 
 ```bash
-uv run python -m pytest        # 547+ tests
+uv run python -m pytest        # 554+ tests
 uv run python -m ruff check .  # linter
 uv run python -m mypy .        # type checker
 ```

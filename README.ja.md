@@ -2,19 +2,48 @@
 
 [English version](README.md)
 
-StatsBomb Open Data を使ったサッカー "what-if" シミュレーター。ルールベースの因果シミュレーションと LLM による分析レポートで、監督交代や選手移籍がシーズンにどう影響したかを探ります。
+> _「第 29 節後にファン・ハールが解任されていたら？」_
+
+監督交代や選手移籍がサッカーチームのシーズンにどう影響したかをシミュレートします。StatsBomb Open Data、ルールベースの因果シミュレーション、オプションの LLM 分析レポートを使用。**API キー不要で動作 — LLM はオプションです。**
+
+<!-- スクリーンショットプレースホルダー -->
+<!-- ![IfFootball UI](docs/images/screenshot.png) -->
+
+## クイックスタート
+
+```bash
+git clone https://github.com/hryk224/IfFootball.git
+cd IfFootball
+uv sync --extra dev
+uv run streamlit run app.py
+```
+
+**Manchester United** を選択し、Current Manager に **Louis van Gaal** と入力、Trigger Week を **29** に設定して **Run Simulation** をクリック。初回実行時は StatsBomb API の取得に 2〜5 分かかります。
+
+`.env` ファイル、API キー、LLM のセットアップなしで基本機能が使えます。
+
+## 出力例
+
+バックテスト: マンチェスター・ユナイテッド — ファン・ハール解任 第 29 節（プレミアリーグ 2015-16、20 回シミュレーション）:
+
+```
+Branch A（継続）:  12.2 ポイント（平均）  ±3.5
+Branch B（解任）:  12.8 ポイント（平均）  ±3.2
+差分 (B - A):      +0.5 ポイント
+
+影響上位 3 名:
+  1. Michael Carrick     (impact: 0.683) — 疲労 +0.19, 信頼度 +0.13
+  2. Jesse Lingard       (impact: 0.595) — フォーム -0.09, 疲労 -0.15
+  3. Ander Herrera       (impact: 0.584) — フォーム -0.12, 戦術理解度 -0.25
+```
+
+シミュレーションは微増傾向（+0.5 ポイント）を示しますが、統計的不確実性の範囲内です。全選手が戦術理解度のリセット（-0.25）を経験しており、監督交代後の適応期間を反映しています。Streamlit UI ではレーダーチャートと構造化レポートも含む完全な分析が表示されます。
 
 ## 免責事項
 
 IfFootball は **what-if シミュレーションツール**であり、予測エンジンではありません。結果はルールベースのパラメータに基づく理論的な結果であり、実際のイベントの予測ではありません。すべてのシミュレーションパラメータは暫定値であり、根拠とともに [simulation-rules.md](docs/simulation-rules.md#known-limitations) に記載されています。本ソフトウェアまたはその出力に基づいて行われたいかなる判断についても、作者は責任を負いません。
 
-## 概要
-
-IfFootball は並行シミュレーションを実行します。何も変化しないケース（Branch A）とトリガーを適用したケース（Branch B）を N 回の確率的シミュレーションで比較します。
-
-**シナリオ例:** _「2015-16 シーズン第 29 節後にマンチェスター・ユナイテッドがファン・ハールを解任していたら？」_
-
-### 主な機能
+## 主な機能
 
 - **監督交代** — シーズン中の解任をシミュレート。戦術プロファイルのリセット、選手の信頼度再調整、適応曲線を反映
 - **選手移籍** _(実験的)_ — 役割に応じた信頼度初期化で選手をスカッドに追加
@@ -51,23 +80,19 @@ IfFootball は [StatsBomb Open Data](https://github.com/statsbomb/open-data) の
 | プレミアリーグ   | 2015-16  | Manchester United, Manchester City, Arsenal, Liverpool, Chelsea, Tottenham Hotspur, Leicester City |
 | ラ・リーガ       | 2015-16  | Real Madrid, Barcelona, Atletico Madrid                                                            |
 
-## セットアップ
+## 詳細セットアップ
 
-### 必要環境
-
-- Python >= 3.11
-- [uv](https://docs.astral.sh/uv/)（パッケージマネージャー）
-- Node.js（Markdown フォーマット用のみ）
-
-### インストール
+上記のクイックスタートで最小構成は動作します。ここでは開発ツールと LLM の設定を追加します。
 
 ```bash
 git clone https://github.com/hryk224/IfFootball.git
 cd IfFootball
 cp .env.example .env
 uv sync --extra dev
-npm install
+npm install                    # Markdown フォーマット用（任意）
 ```
+
+**必要環境:** Python >= 3.11, [uv](https://docs.astral.sh/uv/), Node.js（任意、`npm run format:md` 用のみ）
 
 ### LLM セットアップ（任意）
 
@@ -121,7 +146,7 @@ uv run python scripts/backtest_van_gaal.py
 ## テスト
 
 ```bash
-uv run python -m pytest        # 547+ テスト
+uv run python -m pytest        # 554+ テスト
 uv run python -m ruff check .  # リンター
 uv run python -m mypy .        # 型チェック
 ```
