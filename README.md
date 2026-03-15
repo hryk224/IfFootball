@@ -6,8 +6,8 @@
 
 Simulate how managerial changes and player transfers might have altered a football team's season. IfFootball uses StatsBomb Open Data, rule-based causal simulation, and optional LLM-generated analysis. **No API key required to run — LLM is optional.**
 
-<!-- Screenshot placeholder: replace with actual UI screenshot -->
-<!-- ![IfFootball UI](docs/images/screenshot.png) -->
+![IfFootball Demo - Preset cards and Summary](docs/images/demo-overview-1.png)
+![IfFootball Demo - Player Impact and Detailed Analysis](docs/images/demo-overview-2.png)
 
 ## Quick Start
 
