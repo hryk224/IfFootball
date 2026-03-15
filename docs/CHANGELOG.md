@@ -1,5 +1,29 @@
 # Changelog
 
+## M5 — MVP Finalization
+
+MVP の仕上げとして、実 LLM 接続・Transfer Trigger の UI 統合・ユーザー受け入れテストを完了。
+
+### Added
+
+- 4 プロバイダー対応 LLM クライアント（`llm/providers/`）
+  - OpenAI（MVP 標準）、Anthropic、Google Gemini、Groq（ライブデモ用）
+  - `LLM_PROVIDER` 明示指定 → API キー auto-detect のフォールバック順
+  - SDK import 可否を含めた provider 解決
+  - `python-dotenv` で `.env` ファイル読み込み
+- Transfer Trigger を UI に experimental 対応として追加
+  - サイドバーに Trigger Type ラジオ（Manager Change / Player Transfer）
+  - Transfer 時: team radar 非表示、新加入選手の info card 表示
+  - MVP スコープに含める判断を記録（M6 で公開導線整備予定）
+- `.env.example` — 全プロバイダーの API キー設定テンプレート
+
+### Changed
+
+- `app.py` — LLM 有効時は `generate_report()` で LLM 生成 Markdown を表示、失敗時はデータのみフォールバック
+- `pyproject.toml` — `[project.optional-dependencies]` に `llm` グループ追加（`openai` / `anthropic` / `google-genai` / `groq`）、`python-dotenv` を通常依存に追加
+
+---
+
 ## M4 — Backtest
 
 Van Gaal 仮想解任シナリオ（Manchester United 2015-16, week 29）のバックテストを実行し、評価結果と課題を記録。
