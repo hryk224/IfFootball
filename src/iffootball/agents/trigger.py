@@ -24,7 +24,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union
+from typing import TYPE_CHECKING, Union
+
+if TYPE_CHECKING:
+    from iffootball.agents.manager import ManagerAgent
 
 
 class TriggerType(str, Enum):
@@ -53,6 +56,13 @@ class ManagerChangeTrigger:
             "pre_season" — appointment before the season starts.
         applied_at: Match week after which the change takes effect.
             Effects start from applied_at + 1.
+        incoming_profile: Optional ManagerAgent whose static tactical
+            attributes (pressing_intensity, possession_preference, etc.)
+            are copied to the active manager on trigger execution.
+            When None, neutral defaults are used instead.
+            Note: manager_name is always taken from incoming_manager_name,
+            not from the profile. Dynamic state (job_security, squad_trust)
+            is always reset regardless of the profile.
         trigger_type: Fixed to MANAGER_CHANGE. Not settable via __init__.
     """
 
@@ -60,6 +70,7 @@ class ManagerChangeTrigger:
     incoming_manager_name: str
     transition_type: str  # "mid_season" | "pre_season"
     applied_at: int
+    incoming_profile: ManagerAgent | None = None
 
     trigger_type: TriggerType = field(
         default=TriggerType.MANAGER_CHANGE,

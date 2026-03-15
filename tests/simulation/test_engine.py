@@ -301,7 +301,11 @@ class TestSimulationTrigger:
         # Tactical attributes should be reset to neutral defaults
         assert mgr.pressing_intensity == 50.0
         assert mgr.possession_preference == 0.5
+        assert mgr.counter_tendency == 0.5
         assert mgr.preferred_formation == "4-4-2"
+        assert mgr.implementation_speed == 50.0
+        assert mgr.youth_development == 50.0
+        assert mgr.style_stubbornness == 50.0
 
     def test_result_is_snapshot(self) -> None:
         """Mutating the result should not affect engine state."""
@@ -311,6 +315,118 @@ class TestSimulationTrigger:
         result.final_squad[0].current_form = 999.0
         # Engine's internal state should be unaffected
         assert sim._squad[0].current_form != 999.0
+
+
+def _make_incoming_profile() -> ManagerAgent:
+    """Build a ManagerAgent to use as incoming_profile in triggers."""
+    return ManagerAgent(
+        manager_name="Profile Name (should be ignored)",
+        team_name="Other Team",
+        competition_id=2,
+        season_id=2,
+        tenure_match_ids=frozenset({100, 101}),
+        pressing_intensity=70.0,
+        possession_preference=0.65,
+        counter_tendency=0.35,
+        preferred_formation="3-5-2",
+        implementation_speed=80.0,
+        youth_development=30.0,
+        style_stubbornness=75.0,
+    )
+
+
+class TestManagerChangeWithProfile:
+    """Tests for incoming_profile on ManagerChangeTrigger."""
+
+    def test_profile_attributes_copied(self) -> None:
+        sim = _make_simulation()
+        profile = _make_incoming_profile()
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=profile,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        mgr = result.final_manager
+        assert mgr.pressing_intensity == 70.0
+        assert mgr.possession_preference == 0.65
+        assert mgr.counter_tendency == 0.35
+        assert mgr.preferred_formation == "3-5-2"
+        assert mgr.implementation_speed == 80.0
+        assert mgr.youth_development == 30.0
+        assert mgr.style_stubbornness == 75.0
+
+    def test_manager_name_from_trigger_not_profile(self) -> None:
+        sim = _make_simulation()
+        profile = _make_incoming_profile()
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Trigger Name",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=profile,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        # manager_name must come from trigger, not profile
+        assert result.final_manager.manager_name == "Trigger Name"
+
+    def test_dynamic_state_reset_with_profile(self) -> None:
+        """job_security and squad_trust must be reset, not copied from profile."""
+        sim = _make_simulation()
+        profile = _make_incoming_profile()
+        # Set non-default dynamic state on the profile to prove it is ignored.
+        profile.job_security = 0.3
+        profile.squad_trust = {"Player 1": 0.9}
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=profile,
+        )
+        # Execute trigger in isolation via internal method.
+        sim._execute_trigger(trigger)
+        mgr = sim._manager
+        assert mgr.job_security == 1.0
+        assert mgr.squad_trust == {}
+
+    def test_squad_reset_with_profile(self) -> None:
+        sim = _make_simulation()
+        profile = _make_incoming_profile()
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=profile,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        # Player tactical_understanding should have started from 0.25 reset
+        for p in result.final_squad:
+            assert p.tactical_understanding >= 0.25
+
+    def test_none_profile_uses_defaults(self) -> None:
+        """Explicitly passing None behaves like no profile."""
+        sim = _make_simulation()
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="New Manager",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=None,
+        )
+        sim.apply_trigger(trigger)
+        result = sim.run()
+        mgr = result.final_manager
+        assert mgr.pressing_intensity == 50.0
+        assert mgr.possession_preference == 0.5
+        assert mgr.preferred_formation == "4-4-2"
+        assert mgr.youth_development == 50.0
 
 
 class TestBranchIndependence:

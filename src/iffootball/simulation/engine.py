@@ -240,31 +240,46 @@ class Simulation:
         """Execute a single trigger's immediate effects.
 
         ManagerChangeTrigger:
-            Replaces manager identity and resets tactical attributes to
-            neutral defaults. In M2, the incoming manager's actual
-            tactical profile is unknown (no StatsBomb data for the
-            hypothetical appointment), so defaults represent an
-            "unknown new manager" baseline. A future enhancement could
-            accept a pre-built ManagerAgent for the incoming manager.
+            Replaces manager identity and sets tactical attributes from
+            the incoming_profile if provided, otherwise falls back to
+            neutral defaults.
 
-            Resets: pressing_intensity, possession_preference,
-            counter_tendency, preferred_formation, implementation_speed,
-            style_stubbornness, job_security, squad_trust.
+            Static profile attributes copied from incoming_profile:
+                pressing_intensity, possession_preference, counter_tendency,
+                preferred_formation, implementation_speed, youth_development,
+                style_stubbornness.
+
+            Always reset regardless of profile:
+                manager_name (from trigger.incoming_manager_name),
+                job_security (1.0), squad_trust ({}).
             Also resets squad tactical_understanding and manager_trust.
         """
         if isinstance(trigger, ManagerChangeTrigger):
-            # Replace manager identity.
+            # Replace manager identity (trigger name is authoritative).
             self._manager.manager_name = trigger.incoming_manager_name
             self._matches_since_appointment = 0
 
-            # Reset tactical attributes to neutral defaults.
-            # In M2, the incoming manager profile is unknown.
-            self._manager.pressing_intensity = 50.0
-            self._manager.possession_preference = 0.5
-            self._manager.counter_tendency = 0.5
-            self._manager.preferred_formation = "4-4-2"
-            self._manager.implementation_speed = 50.0
-            self._manager.style_stubbornness = 50.0
+            profile = trigger.incoming_profile
+            if profile is not None:
+                # Copy static tactical attributes from provided profile.
+                self._manager.pressing_intensity = profile.pressing_intensity
+                self._manager.possession_preference = profile.possession_preference
+                self._manager.counter_tendency = profile.counter_tendency
+                self._manager.preferred_formation = profile.preferred_formation
+                self._manager.implementation_speed = profile.implementation_speed
+                self._manager.youth_development = profile.youth_development
+                self._manager.style_stubbornness = profile.style_stubbornness
+            else:
+                # No profile provided — neutral defaults.
+                self._manager.pressing_intensity = 50.0
+                self._manager.possession_preference = 0.5
+                self._manager.counter_tendency = 0.5
+                self._manager.preferred_formation = "4-4-2"
+                self._manager.implementation_speed = 50.0
+                self._manager.youth_development = 50.0
+                self._manager.style_stubbornness = 50.0
+
+            # Dynamic state always reset on new appointment.
             self._manager.job_security = 1.0
             self._manager.squad_trust = {}
 
