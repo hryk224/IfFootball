@@ -29,6 +29,16 @@ from iffootball.llm.client import LLMClient
 # Load .env file so API keys are available from os.environ.
 load_dotenv()
 
+# Bridge Streamlit Cloud secrets to os.environ (if running in Streamlit).
+try:
+    import streamlit as st
+
+    for key in list(st.secrets):
+        if key not in os.environ:
+            os.environ[key] = str(st.secrets[key])
+except Exception:
+    pass  # Not running in Streamlit or no secrets configured.
+
 # Provider name → (env key for API key, module import path).
 _PROVIDERS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
