@@ -17,12 +17,14 @@ venv/
 !.env.example
 
 # データベース
+*.db
 *.sqlite3
 db/
 
 # Data directory (gitignored by default, except demo cache)
 data/*
 !data/demo_cache/
+!data/demo_cache/*.db
 
 # Streamlit
 .streamlit/secrets.toml
