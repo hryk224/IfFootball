@@ -474,13 +474,13 @@ def _render_player_impact(
 
 def _render_transfer_player_info(params: SimulationParams) -> None:
     """Display a summary card for the transferred player."""
-    st.subheader(f"New Signing: {params.transfer_player_name}")
+    st.subheader(f"Simulated Signing: {params.transfer_player_name}")
     st.write(
-        f"- **Role:** {params.transfer_expected_role}\n"
-        f"- **Joined at:** week {params.trigger_week + 1}\n"
+        f"- **Simulated role:** {params.transfer_expected_role}\n"
+        f"- **Available from:** week {params.trigger_week + 1} (simulated)\n"
         f"- **Attributes:** neutral (50th percentile) — no StatsBomb data\n"
-        f"- **Note:** This player only exists in Branch B. "
-        f"Their state is not included in the A/B impact ranking above."
+        f"- **Note:** This is a hypothetical signing. The player only exists "
+        f"in Branch B and is not included in the A/B impact ranking above."
     )
 
 
@@ -499,12 +499,12 @@ def _render_report(
 
     if params.trigger_type == "transfer_in":
         trigger_desc = (
-            f"Transfer in: {params.transfer_player_name} "
-            f"({params.transfer_expected_role}) at week {params.trigger_week}"
+            f"Simulated transfer: {params.transfer_player_name} "
+            f"({params.transfer_expected_role}) joining at week {params.trigger_week}"
         )
     else:
         trigger_desc = (
-            f"Manager change: {params.manager_name} -> "
+            f"Simulated manager change: {params.manager_name} -> "
             f"{params.incoming_manager_name} at week {params.trigger_week}"
         )
 
@@ -534,7 +534,11 @@ def _render_report(
     )
 
     if llm_client is not None:
-        st.caption("Generating report via LLM...")
+        st.caption(
+            "Generating report via LLM. Scenario data (team names, player "
+            "names, simulation results) is sent to the configured provider. "
+            "Data handling follows the provider's policy."
+        )
         try:
             report_md = generate_report(llm_client, report_input)
             st.markdown(report_md)
@@ -608,7 +612,10 @@ def main() -> None:
 
     st.title("IfFootball - What-If Simulation")
     st.caption(
-        "Compare simulation branches with and without a manager change trigger."
+        "Compare simulation branches with and without a change trigger "
+        "(manager change or player transfer). "
+        "IfFootball is a what-if simulation tool, not a prediction engine. "
+        "Results should not be used for real-world decision-making."
     )
 
     params = _render_sidebar()

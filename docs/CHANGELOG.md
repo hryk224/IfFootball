@@ -81,7 +81,7 @@ Added visualization, LLM report generation, and Streamlit UI for end-to-end what
 #### Storage
 
 - `ComparisonMeta` / `ComparisonResultWithMeta` — Persists rng_seed, n_runs, trigger_summary, and created_at (UTC ISO 8601) alongside comparison results
-- Documented cascade_events run_id naming convention (`{branch}_{index}`)
+- Documented cascade*events run_id naming convention (`{branch}*{index}`)
 
 ### Changed
 

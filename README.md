@@ -4,6 +4,10 @@
 
 Football "what-if" simulator powered by StatsBomb Open Data. Explore how managerial changes and player transfers might have altered a team's season through rule-based causal simulation and LLM-generated analysis.
 
+## Disclaimer
+
+IfFootball is a **what-if simulation tool**, not a prediction engine. Results represent theoretical outcomes under specified rule-based parameters, not predictions of actual events. All simulation parameters are provisional and documented with their rationale in [simulation-rules.md](docs/simulation-rules.md#known-limitations). The authors are not responsible for any decisions made based on this software or its outputs.
+
 ## Overview
 
 IfFootball runs parallel simulations — one where nothing changes (Branch A) and one where a trigger is applied (Branch B) — then compares the outcomes across N stochastic runs.
@@ -16,7 +20,7 @@ IfFootball runs parallel simulations — one where nothing changes (Branch A) an
 - **Player Transfer** _(Experimental)_ — Add a player to the squad with role-based trust initialization
 - **A/B Comparison** — Poisson match model, weekly state updates (fatigue, trust, tactical understanding), turning point detection with cascade event tracking
 - **Visualization** — Team and player radar charts comparing Branch A/B outcomes
-- **LLM Reports** — Structured comparison reports with fact / analysis / hypothesis labels and source provenance
+- **LLM Reports** — Structured comparison reports with fact / analysis / hypothesis labels and source classification
 - **Streamlit UI** — Single-page app for end-to-end simulation
 
 ### How It Works
@@ -38,7 +42,7 @@ Comparison & Visualization (radar charts, cascade events, reports)
 
 ## Data Source
 
-IfFootball uses [StatsBomb Open Data](https://github.com/statsbomb/open-data) exclusively. All metrics and terminology follow StatsBomb definitions. No scraping is involved.
+IfFootball uses [StatsBomb Open Data](https://github.com/statsbomb/open-data) exclusively. All metrics and terminology follow StatsBomb definitions. No scraping is involved. Attribution and usage terms follow the [StatsBomb Open Data license](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf).
 
 Currently supported competitions (from `config/targets.toml`):
 
@@ -83,6 +87,8 @@ GROQ_API_KEY=gsk_...
 ```
 
 Supported providers: OpenAI, Anthropic, Google Gemini, Groq. Without LLM configuration, the app runs in data-only mode with structured reports generated from simulation data.
+
+**Note:** When LLM is enabled, scenario data (team names, player names, simulation results) is sent to the configured provider. Data handling follows the provider's policy.
 
 ## Usage
 
