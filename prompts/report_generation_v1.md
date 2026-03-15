@@ -26,6 +26,7 @@ You are a football simulation analyst writing a structured comparison report. Gi
 ## Sign convention
 
 When describing numeric changes, do not combine a direction word with a negative sign:
+
 - ✅ Correct: `decreased by 35.3`, `increased by 24.0`, `changed by -35.3`
 - ❌ Wrong: `decreased by -35.3` (double negative)
 
