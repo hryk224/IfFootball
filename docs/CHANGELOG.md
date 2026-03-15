@@ -1,5 +1,32 @@
 # Changelog
 
+## OSS Release Preparation
+
+Prepared the project for public release with documentation, safety checks, schema hardening, and UX improvements.
+
+### Added
+
+- `CONTRIBUTING.md` with development workflow, architecture principles, and supply chain policy
+- `README.ja.md` — Full Japanese translation of README
+- Schema version management (`db_meta` table with `schema_version` tracking; legacy DB detection)
+- `cascade_runs` header table to distinguish saved-empty runs from never-saved
+- `OPENAI_BASE_URL` and `OPENAI_MODEL` env var support for OpenAI-compatible endpoints
+- Design memo for conversation memory (deferred to M7+)
+
+### Changed
+
+- README restructured: scenario quote + Quick Start (no API key needed) + real backtest output example at top; Full Setup separated from Quick Start
+- CHANGELOG rewritten in English with public-facing terminology (internal milestone names removed)
+- Disclaimer added to README, README.ja.md, and Streamlit UI (not a prediction engine; output liability limitation)
+- LLM data transmission disclosure added to app, README, README.ja.md, .env.example
+- StatsBomb Open Data license reference added to Data Source section
+- `source provenance` → `source classification` (expression accuracy)
+- DB schema hardened to version 2: CHECK constraints on player_agents (percentiles 0-100, dynamic state 0-1) and team_baselines (xG >= 0, possession 0-1); comparison_results metadata columns now NOT NULL
+- Streamlit UI: human-readable competition labels, Advanced Settings expander for Runs/Seed, conclusion-first output order, data-driven Causal Chain when LLM unavailable
+- Name-based identifier review: assessed as no action needed for StatsBomb Open Data scope; future ID-column migration documented
+
+---
+
 ## MVP Finalization
 
 Completed real LLM provider integration, transfer trigger UI, and end-to-end user acceptance testing.
