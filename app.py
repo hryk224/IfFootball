@@ -21,10 +21,12 @@ from iffootball.agents.manager import ManagerAgent
 from iffootball.agents.trigger import ManagerChangeTrigger
 from iffootball.collectors.statsbomb import StatsBombOpenDataCollector
 from iffootball.config import SimulationRules
+from iffootball.llm.client import LLMClient
 from iffootball.llm.report_generation import (
     DEFAULT_LIMITATIONS,
     PlayerImpactEntry,
     ReportInput,
+    generate_report,
 )
 from iffootball.pipeline import InitializationResult, initialize
 from iffootball.simulation.comparison import ComparisonResult, run_comparison
@@ -166,6 +168,18 @@ def _render_sidebar() -> SimulationParams | None:
         )
     )
 
+    # LLM status display.
+    try:
+        from iffootball.llm.providers import available_providers
+
+        providers = available_providers()
+        if providers:
+            st.sidebar.success(f"LLM: {', '.join(providers)}")
+        else:
+            st.sidebar.info("LLM: not configured (data-only mode)")
+    except Exception:
+        st.sidebar.info("LLM: not available")
+
     if st.sidebar.button("Run Simulation", type="primary", use_container_width=True):
         if not manager_name.strip():
             st.sidebar.error("Current Manager Name is required.")
@@ -251,13 +265,34 @@ def _run_pipeline(params: SimulationParams) -> None:
     # 4. Compute player impacts.
     impacts = rank_player_impact(comparison, top_n=_DEFAULT_TOP_PLAYERS)
 
-    # 5. Display results.
+    # 5. Resolve LLM client (if configured).
+    llm_client = _get_llm_client()
+
+    # 6. Display results.
     _render_delta_metrics(comparison)
     _render_team_radar(comparison, init_result, incoming_profile)
     _render_player_impact(impacts)
-    _render_report(comparison, params, impacts)
+    _render_report(comparison, params, impacts, llm_client)
 
     progress.progress(100, text="Complete.")
+
+
+# ---------------------------------------------------------------------------
+# LLM client resolution
+# ---------------------------------------------------------------------------
+
+
+def _get_llm_client() -> LLMClient | None:
+    """Resolve an LLM client from environment, or return None."""
+    try:
+        from iffootball.llm.providers import available_providers, create_client
+
+        providers = available_providers()
+        if not providers:
+            return None
+        return create_client()
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -338,12 +373,12 @@ def _render_report(
     comparison: ComparisonResult,
     params: SimulationParams,
     impacts: list[PlayerImpact],
+    llm_client: LLMClient | None,
 ) -> None:
     """Display the comparison report.
 
-    Assembles ReportInput from simulation results and renders a
-    structured data-only report. LLM-based report generation is
-    optional and requires an LLMClient to be configured separately.
+    Uses LLM-generated report when a client is available, otherwise
+    falls back to a data-only structured report.
     """
     st.header("Comparison Report")
 
@@ -365,7 +400,6 @@ def _render_report(
         for p in impacts
     ]
 
-    # Build report input (no LLM action explanations in this version).
     report_input = ReportInput(
         trigger_description=trigger_desc,
         points_mean_a=comparison.no_change.total_points_mean,
@@ -378,7 +412,16 @@ def _render_report(
         limitations=list(DEFAULT_LIMITATIONS),
     )
 
-    # Render data-only report (LLM integration is optional).
+    if llm_client is not None:
+        st.caption("Generating report via LLM...")
+        try:
+            report_md = generate_report(llm_client, report_input)
+            st.markdown(report_md)
+            return
+        except Exception:
+            st.warning("LLM report generation failed. Falling back to data report.")
+
+    # Fallback: data-only report.
     _render_data_report(report_input)
 
 
