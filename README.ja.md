@@ -152,7 +152,6 @@ uv run python -m mypy .        # 型チェック
 ## ドキュメント
 
 - [Simulation Rules](docs/simulation-rules.md) — 全パラメータの定義と根拠（英語）
-- [Changelog](docs/CHANGELOG.md) — マイルストーンごとの変更履歴
 - [Contributing](CONTRIBUTING.md) — 開発フローとガイドライン
 
 ## ライセンス

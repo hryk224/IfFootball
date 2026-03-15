@@ -152,7 +152,6 @@ uv run python -m mypy .        # type checker
 ## Documentation
 
 - [Simulation Rules](docs/simulation-rules.md) — All configurable parameters with definitions and rationale
-- [Changelog](docs/CHANGELOG.md) — Per-milestone change history
 - [Contributing](CONTRIBUTING.md) — Development workflow and guidelines
 
 ## License
