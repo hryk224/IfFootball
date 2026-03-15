@@ -6,8 +6,8 @@
 
 監督交代や選手移籍がサッカーチームのシーズンにどう影響したかをシミュレートします。StatsBomb Open Data、ルールベースの因果シミュレーション、オプションの LLM 分析レポートを使用。**API キー不要で動作 — LLM はオプションです。**
 
-![IfFootball デモ - プリセットとサマリー](docs/images/demo-overview-1.png)
-![IfFootball デモ - 選手インパクトと詳細分析](docs/images/demo-overview-2.png)
+![IfFootball デモ - プリセットとサマリー](docs/images/demo-overview.png)
+![IfFootball デモ - 選手インパクトと詳細分析](docs/images/demo-detailed-analysis.png)
 
 ## クイックスタート
 
