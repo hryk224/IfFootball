@@ -9,6 +9,8 @@
 ![IfFootball デモ - プリセットとサマリー](docs/images/demo-overview.png)
 ![IfFootball デモ - 選手インパクトと詳細分析](docs/images/demo-detailed-analysis.png)
 
+**[Live Demo](https://iffootball-bfmlfowrz7fxf8j4fkuuqv.streamlit.app/)** — セットアップ不要でブラウザから試せます。
+
 ## クイックスタート
 
 ```bash

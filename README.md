@@ -9,6 +9,8 @@ Simulate how managerial changes and player transfers might have altered a footba
 ![IfFootball Demo - Preset cards and Summary](docs/images/demo-overview.png)
 ![IfFootball Demo - Player Impact and Detailed Analysis](docs/images/demo-detailed-analysis.png)
 
+**[Live Demo](https://iffootball-bfmlfowrz7fxf8j4fkuuqv.streamlit.app/)** — Try it in your browser, no setup required.
+
 ## Quick Start
 
 ```bash
