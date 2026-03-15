@@ -13,11 +13,11 @@ Fill the empty string fields (`""`) in the JSON skeleton. Return the completed J
 - `causal_chain[].effect` — Describe the consequence of this event on the player/team.
 - `causal_chain[].evidence[].statement` — Describe the supporting evidence for this causal step.
 - `player_impacts[].changes[].interpretation.statement` — Explain what the change in this axis means for the player.
-- `confidence_notes` — You may refine the wording of existing notes, but do not add or remove entries.
 
 ## Fields you MUST NOT change
 
 - `scenario` — all fields (trigger_type, team_name, detail)
+- `limitations` — all fields (system and scenario limitations are code-generated)
 - `highlights[].metric_name`, `value_a`, `value_b`, `diff`
 - `highlights[].interpretations[].label`, `source`
 - `causal_chain[].step_id`, `affected_agent`, `event_type`, `depth`

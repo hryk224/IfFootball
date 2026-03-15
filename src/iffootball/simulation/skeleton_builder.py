@@ -30,15 +30,17 @@ from iffootball.agents.trigger import (
 from iffootball.simulation.cascade_tracker import CascadeEvent
 from iffootball.simulation.comparison import ComparisonResult
 from iffootball.simulation.structured_explanation import (
+    SYSTEM_LIMITATIONS,
     CausalStep,
     DifferenceHighlight,
     EvidenceItem,
     EvidenceSource,
+    LimitationsDisclosure,
     PlayerImpactChange,
     PlayerImpactSummary,
     ScenarioDescriptor,
     StructuredExplanation,
-    generate_confidence_note_drafts,
+    generate_scenario_limitations,
     infer_label,
 )
 from iffootball.visualization.player_impact import PlayerImpact
@@ -297,12 +299,16 @@ def build_skeleton(
     highlights = _build_highlights(comparison)
     causal_chain = _build_causal_chain(comparison)
     player_impacts = _build_player_impacts(impacts, causal_chain)
-    confidence_notes = tuple(generate_confidence_note_drafts(causal_chain))
+    scenario_limitations = generate_scenario_limitations(causal_chain)
+    limitations = LimitationsDisclosure(
+        system=SYSTEM_LIMITATIONS,
+        scenario=scenario_limitations,
+    )
 
     return StructuredExplanation(
         scenario=scenario,
         highlights=highlights,
         causal_chain=causal_chain,
         player_impacts=player_impacts,
-        confidence_notes=confidence_notes,
+        limitations=limitations,
     )

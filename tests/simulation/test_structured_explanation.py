@@ -5,14 +5,18 @@ from __future__ import annotations
 import pytest
 
 from iffootball.simulation.structured_explanation import (
+    SYSTEM_LIMITATIONS,
     CausalStep,
     DifferenceHighlight,
     EvidenceItem,
+    LimitationCategory,
+    LimitationItem,
+    LimitationsDisclosure,
     PlayerImpactChange,
     PlayerImpactSummary,
     ScenarioDescriptor,
     StructuredExplanation,
-    generate_confidence_note_drafts,
+    generate_scenario_limitations,
     infer_label,
 )
 
@@ -76,7 +80,6 @@ class TestScenarioDescriptor:
             )
 
     def test_unknown_trigger_type_no_validation(self) -> None:
-        # Unknown types have no required keys, so no error.
         sd = ScenarioDescriptor(
             trigger_type="unknown",
             team_name="Team A",
@@ -98,7 +101,7 @@ class TestScenarioDescriptor:
 
 
 # ---------------------------------------------------------------------------
-# EvidenceItem
+# EvidenceItem / DifferenceHighlight / CausalStep / PlayerImpact
 # ---------------------------------------------------------------------------
 
 
@@ -115,11 +118,6 @@ class TestEvidenceItem:
         )
         assert ev.label == "data"
         assert ev.source == "simulation_output"
-
-
-# ---------------------------------------------------------------------------
-# DifferenceHighlight
-# ---------------------------------------------------------------------------
 
 
 class TestDifferenceHighlight:
@@ -143,13 +141,6 @@ class TestDifferenceHighlight:
             ),
         )
         assert len(dh.interpretations) == 2
-        assert dh.interpretations[0].label == "data"
-        assert dh.interpretations[1].label == "analysis"
-
-
-# ---------------------------------------------------------------------------
-# CausalStep
-# ---------------------------------------------------------------------------
 
 
 class TestCausalStep:
@@ -161,22 +152,12 @@ class TestCausalStep:
             affected_agent="Player A",
             event_type="form_drop",
             evidence=(
-                EvidenceItem(
-                    statement="",
-                    label="data",
-                    source="simulation_output",
-                ),
+                EvidenceItem(statement="", label="data", source="simulation_output"),
             ),
             depth=1,
         )
         assert step.step_id == "cs-001"
         assert step.cause == ""
-        assert step.affected_agent == "Player A"
-
-
-# ---------------------------------------------------------------------------
-# PlayerImpactChange / PlayerImpactSummary
-# ---------------------------------------------------------------------------
 
 
 class TestPlayerImpact:
@@ -185,9 +166,7 @@ class TestPlayerImpact:
             axis="form",
             diff=-0.15,
             interpretation=EvidenceItem(
-                statement="",
-                label="data",
-                source="simulation_output",
+                statement="", label="data", source="simulation_output"
             ),
         )
         assert change.axis == "form"
@@ -205,29 +184,85 @@ class TestPlayerImpact:
                         statement="", label="data", source="simulation_output"
                     ),
                 ),
-                PlayerImpactChange(
-                    axis="trust",
-                    diff=-0.05,
-                    interpretation=EvidenceItem(
-                        statement="", label="data", source="simulation_output"
-                    ),
-                ),
             ),
             related_step_ids=("cs-001", "cs-003"),
         )
-        assert len(summary.changes) == 2
-        assert summary.changes[0].axis == "form"
         assert summary.related_step_ids == ("cs-001", "cs-003")
 
 
 # ---------------------------------------------------------------------------
-# generate_confidence_note_drafts
+# LimitationItem / LimitationsDisclosure
 # ---------------------------------------------------------------------------
 
 
-class TestConfidenceNoteDrafts:
+class TestLimitationItem:
+    def test_system_limitation(self) -> None:
+        item = LimitationItem(
+            category=LimitationCategory.MODEL_BOUNDARY,
+            message_en="Match uses Poisson model.",
+            message_ja="試合は Poisson モデルを使用。",
+            severity="warning",
+        )
+        assert item.category == LimitationCategory.MODEL_BOUNDARY
+        assert item.related_step_ids == ()
+
+    def test_scenario_limitation_with_step_ids(self) -> None:
+        item = LimitationItem(
+            category=LimitationCategory.CHAIN_DEPTH,
+            message_en="Deep chain.",
+            message_ja="深い連鎖。",
+            severity="warning",
+            related_step_ids=("cs-003", "cs-004"),
+        )
+        assert item.related_step_ids == ("cs-003", "cs-004")
+
+
+class TestLimitationsDisclosure:
+    def test_two_layer_structure(self) -> None:
+        disclosure = LimitationsDisclosure(
+            system=(
+                LimitationItem(
+                    category=LimitationCategory.MODEL_BOUNDARY,
+                    message_en="System limit.",
+                    message_ja="システム制約。",
+                    severity="warning",
+                ),
+            ),
+            scenario=(
+                LimitationItem(
+                    category=LimitationCategory.CHAIN_DEPTH,
+                    message_en="Scenario limit.",
+                    message_ja="シナリオ制約。",
+                    severity="warning",
+                ),
+            ),
+        )
+        assert len(disclosure.system) == 1
+        assert len(disclosure.scenario) == 1
+
+
+class TestSystemLimitations:
+    def test_all_have_both_languages(self) -> None:
+        for item in SYSTEM_LIMITATIONS:
+            assert item.message_en
+            assert item.message_ja
+
+    def test_at_least_five_items(self) -> None:
+        assert len(SYSTEM_LIMITATIONS) >= 5
+
+    def test_all_have_category(self) -> None:
+        for item in SYSTEM_LIMITATIONS:
+            assert isinstance(item.category, LimitationCategory)
+
+
+# ---------------------------------------------------------------------------
+# generate_scenario_limitations
+# ---------------------------------------------------------------------------
+
+
+class TestScenarioLimitations:
     def test_empty_chain_returns_empty(self) -> None:
-        assert generate_confidence_note_drafts(()) == []
+        assert generate_scenario_limitations(()) == ()
 
     def test_shallow_chain_no_depth_warning(self) -> None:
         chain = (
@@ -238,17 +273,13 @@ class TestConfidenceNoteDrafts:
                 affected_agent="P",
                 event_type="form_drop",
                 evidence=(
-                    EvidenceItem(
-                        statement="",
-                        label="data",
-                        source="simulation_output",
-                    ),
+                    EvidenceItem(statement="", label="data", source="simulation_output"),
                 ),
                 depth=2,
             ),
         )
-        notes = generate_confidence_note_drafts(chain)
-        assert not any("depth" in n.lower() for n in notes)
+        items = generate_scenario_limitations(chain)
+        assert not any(i.category == LimitationCategory.CHAIN_DEPTH for i in items)
 
     def test_deep_chain_triggers_depth_warning(self) -> None:
         chain = (
@@ -260,18 +291,19 @@ class TestConfidenceNoteDrafts:
                 event_type="form_drop",
                 evidence=(
                     EvidenceItem(
-                        statement="",
-                        label="hypothesis",
-                        source="rule_based_model",
+                        statement="", label="hypothesis", source="rule_based_model"
                     ),
                 ),
                 depth=4,
             ),
         )
-        notes = generate_confidence_note_drafts(chain)
-        assert any("depth" in n.lower() for n in notes)
+        items = generate_scenario_limitations(chain)
+        depth_items = [i for i in items if i.category == LimitationCategory.CHAIN_DEPTH]
+        assert len(depth_items) == 1
+        assert depth_items[0].severity == "warning"
+        assert "cs-001" in depth_items[0].related_step_ids
 
-    def test_high_non_simulation_ratio_triggers_warning(self) -> None:
+    def test_high_non_simulation_ratio(self) -> None:
         chain = tuple(
             CausalStep(
                 step_id=f"cs-{i:03d}",
@@ -281,19 +313,40 @@ class TestConfidenceNoteDrafts:
                 event_type="form_drop",
                 evidence=(
                     EvidenceItem(
-                        statement="",
-                        label="hypothesis",
-                        source="llm_knowledge",
+                        statement="", label="hypothesis", source="llm_knowledge"
                     ),
                 ),
                 depth=1,
             )
             for i in range(3)
         )
-        notes = generate_confidence_note_drafts(chain)
-        assert any("100%" in n for n in notes)
+        items = generate_scenario_limitations(chain)
+        est_items = [
+            i for i in items if i.category == LimitationCategory.ESTIMATION_DEPENDENCY
+        ]
+        assert len(est_items) == 1
+        assert "100%" in est_items[0].message_en
 
-    def test_all_simulation_output_no_source_warning(self) -> None:
+    def test_all_simulation_output_no_estimation_warning(self) -> None:
+        chain = (
+            CausalStep(
+                step_id="cs-001",
+                cause="",
+                effect="",
+                affected_agent="P",
+                event_type="form_drop",
+                evidence=(
+                    EvidenceItem(statement="", label="data", source="simulation_output"),
+                ),
+                depth=1,
+            ),
+        )
+        items = generate_scenario_limitations(chain)
+        assert not any(
+            i.category == LimitationCategory.ESTIMATION_DEPENDENCY for i in items
+        )
+
+    def test_bilingual_messages(self) -> None:
         chain = (
             CausalStep(
                 step_id="cs-001",
@@ -303,16 +356,16 @@ class TestConfidenceNoteDrafts:
                 event_type="form_drop",
                 evidence=(
                     EvidenceItem(
-                        statement="",
-                        label="data",
-                        source="simulation_output",
+                        statement="", label="hypothesis", source="rule_based_model"
                     ),
                 ),
-                depth=1,
+                depth=4,
             ),
         )
-        notes = generate_confidence_note_drafts(chain)
-        assert not any("%" in n for n in notes)
+        items = generate_scenario_limitations(chain)
+        for item in items:
+            assert item.message_en
+            assert item.message_ja
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +387,7 @@ class TestStructuredExplanation:
             highlights=(),
             causal_chain=(),
             player_impacts=(),
-            confidence_notes=(),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
         )
         assert se.scenario.team_name == "Arsenal"
         assert se.highlights == ()

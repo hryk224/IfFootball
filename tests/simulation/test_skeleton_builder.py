@@ -266,22 +266,22 @@ class TestBuildSkeleton:
 
         assert result.player_impacts[0].related_step_ids == ()
 
-    def test_confidence_notes_generated(self) -> None:
+    def test_limitations_generated(self) -> None:
         events = [
             _make_cascade_event(depth=4, magnitude=0.3),
         ]
         comparison = _make_comparison(events_b=events)
         result = build_skeleton(comparison, _make_trigger(), "Team A", [])
 
-        assert len(result.confidence_notes) >= 1
-        assert any("depth" in n.lower() for n in result.confidence_notes)
+        assert len(result.limitations.system) >= 5
+        assert len(result.limitations.scenario) >= 1
 
     def test_empty_events_produce_empty_chain(self) -> None:
         comparison = _make_comparison(events_b=[])
         result = build_skeleton(comparison, _make_trigger(), "Team A", [])
 
         assert result.causal_chain == ()
-        assert result.confidence_notes == ()
+        assert result.limitations.scenario == ()
 
     def test_deduplication_same_path(self) -> None:
         # Same event_type + agent + depth + cause_chain from multiple runs.

@@ -10,8 +10,6 @@ Design principles:
     - This module owns the schema and validation, not prose generation.
 
 Future extension notes:
-    - confidence_notes: v1 uses plain strings. Future versions may use a
-      structured type (reason_type, related_step_ids, message).
     - related_step_ids in PlayerImpactSummary: v1 uses name-based matching
       against affected_agent. Future versions may use richer linking.
 """
@@ -19,6 +17,7 @@ Future extension notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 # ---------------------------------------------------------------------------
@@ -183,37 +182,169 @@ class PlayerImpactSummary:
 
 
 # ---------------------------------------------------------------------------
-# Confidence note generation helpers
+# Limitations disclosure
 # ---------------------------------------------------------------------------
 
-# Conditions that trigger confidence notes (code-driven, not LLM).
+
+class LimitationCategory(str, Enum):
+    """Classification of limitation types."""
+
+    MODEL_BOUNDARY = "model_boundary"
+    DATA_SCOPE = "data_scope"
+    ESTIMATION_DEPENDENCY = "estimation"
+    CHAIN_DEPTH = "chain_depth"
+    UNOBSERVED_FACTOR = "unobserved"
+
+
+LimitationSeverity = Literal["info", "warning"]
+
+
+@dataclass(frozen=True)
+class LimitationItem:
+    """A single limitation with classification and severity.
+
+    Attributes:
+        category:         Type of limitation.
+        message_en:       English description.
+        message_ja:       Japanese description.
+        severity:         "warning" = always show, "info" = detail view only.
+        related_step_ids: CausalStep IDs this limitation applies to.
+                          Empty = system-wide or scenario-wide.
+    """
+
+    category: LimitationCategory
+    message_en: str
+    message_ja: str
+    severity: LimitationSeverity
+    related_step_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LimitationsDisclosure:
+    """Two-layer limitation disclosure.
+
+    Attributes:
+        system:   Fixed model-level constraints. Same for all scenarios.
+        scenario: Scenario-specific uncertainty. Generated from analysis.
+    """
+
+    system: tuple[LimitationItem, ...]
+    scenario: tuple[LimitationItem, ...]
+
+
+# ---------------------------------------------------------------------------
+# System limitations (authoritative structured definitions)
+# ---------------------------------------------------------------------------
+
+SYSTEM_LIMITATIONS: tuple[LimitationItem, ...] = (
+    LimitationItem(
+        category=LimitationCategory.MODEL_BOUNDARY,
+        message_en=(
+            "Match outcomes use a Poisson model with xG-based expected goals; "
+            "in-match events (shots, passes) are not simulated."
+        ),
+        message_ja=(
+            "試合結果は xG ベースの Poisson モデルで決定されます。"
+            "試合内イベント（シュート、パス）はシミュレートされません。"
+        ),
+        severity="warning",
+    ),
+    LimitationItem(
+        category=LimitationCategory.ESTIMATION_DEPENDENCY,
+        message_en=(
+            "Tactical metrics (PPDA, possession, progressive passes) for the "
+            "incoming manager are estimates, not simulation outputs."
+        ),
+        message_ja=(
+            "後任監督の戦術指標（PPDA、ポゼッション、プログレッシブパス）は "
+            "推定値であり、シミュレーション出力ではありません。"
+        ),
+        severity="warning",
+    ),
+    LimitationItem(
+        category=LimitationCategory.MODEL_BOUNDARY,
+        message_en=(
+            "Player technical attributes are fixed throughout the simulation; "
+            "only dynamic state (form, fatigue, trust, understanding) changes."
+        ),
+        message_ja=(
+            "選手の技術属性はシミュレーション中固定です。"
+            "変化するのは動的状態（フォーム、疲労、信頼度、戦術理解度）のみです。"
+        ),
+        severity="info",
+    ),
+    LimitationItem(
+        category=LimitationCategory.ESTIMATION_DEPENDENCY,
+        message_en=(
+            "The action distribution at turning points is rule-based; "
+            "LLM-based action selection is not yet implemented."
+        ),
+        message_ja=(
+            "ターニングポイントでの行動分布はルールベースです。"
+            "LLM ベースの行動選択はまだ実装されていません。"
+        ),
+        severity="info",
+    ),
+    LimitationItem(
+        category=LimitationCategory.MODEL_BOUNDARY,
+        message_en=(
+            "xGA/90 is a fixed baseline; the current model does not simulate "
+            "defensive impact of manager changes."
+        ),
+        message_ja=(
+            "xGA/90 は固定ベースラインです。現在のモデルは "
+            "監督交代による守備への影響をシミュレートしません。"
+        ),
+        severity="warning",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Scenario limitation generation
+# ---------------------------------------------------------------------------
+
 _DEEP_CHAIN_THRESHOLD = 3
-_HIGH_LLM_RATIO_THRESHOLD = 0.5
+_HIGH_NON_SIMULATION_RATIO = 0.5
 
 
-def generate_confidence_note_drafts(
+def generate_scenario_limitations(
     causal_chain: tuple[CausalStep, ...],
-) -> list[str]:
-    """Generate draft confidence notes from causal chain properties.
+) -> tuple[LimitationItem, ...]:
+    """Generate scenario-specific limitations from causal chain analysis.
 
-    Produces notes for:
-        - Deep causal chains (depth >= threshold).
-        - High ratio of rule_based_model or llm_knowledge evidence.
+    v1 conditions:
+        - Causal chain depth >= 3 -> chain_depth warning.
+        - Non-simulation evidence ratio >= 50% -> estimation warning.
 
     Args:
         causal_chain: The causal steps to analyze.
 
     Returns:
-        List of confidence note strings. May be empty.
+        Tuple of scenario-specific LimitationItems. May be empty.
     """
-    notes: list[str] = []
+    items: list[LimitationItem] = []
 
     # Deep chain warning.
     max_depth = max((s.depth for s in causal_chain), default=0)
+    deep_step_ids = tuple(
+        s.step_id for s in causal_chain if s.depth >= _DEEP_CHAIN_THRESHOLD
+    )
     if max_depth >= _DEEP_CHAIN_THRESHOLD:
-        notes.append(
-            f"Causal chain reaches depth {max_depth}; "
-            f"effects beyond depth 2 carry increasing uncertainty."
+        items.append(
+            LimitationItem(
+                category=LimitationCategory.CHAIN_DEPTH,
+                message_en=(
+                    f"Causal chain reaches depth {max_depth}; "
+                    f"effects beyond depth 2 carry increasing uncertainty."
+                ),
+                message_ja=(
+                    f"因果連鎖が深さ {max_depth} に達しています。"
+                    f"深さ 2 を超える効果は不確実性が増大します。"
+                ),
+                severity="warning",
+                related_step_ids=deep_step_ids,
+            )
         )
 
     # Evidence source distribution.
@@ -225,14 +356,24 @@ def generate_confidence_note_drafts(
             if ev.source != "simulation_output":
                 non_simulation += 1
 
-    if total > 0 and (non_simulation / total) >= _HIGH_LLM_RATIO_THRESHOLD:
+    if total > 0 and (non_simulation / total) >= _HIGH_NON_SIMULATION_RATIO:
         pct = round(non_simulation / total * 100)
-        notes.append(
-            f"{pct}% of evidence relies on rule-based models or "
-            f"LLM knowledge rather than direct simulation output."
+        items.append(
+            LimitationItem(
+                category=LimitationCategory.ESTIMATION_DEPENDENCY,
+                message_en=(
+                    f"{pct}% of evidence relies on rule-based models or "
+                    f"LLM knowledge rather than direct simulation output."
+                ),
+                message_ja=(
+                    f"根拠の {pct}% がルールベースモデルまたは "
+                    f"LLM 知識に依存しており、シミュレーション直接出力ではありません。"
+                ),
+                severity="warning",
+            )
         )
 
-    return notes
+    return tuple(items)
 
 
 # ---------------------------------------------------------------------------
@@ -252,13 +393,12 @@ class StructuredExplanation:
         highlights:       Key metric differences with interpretations.
         causal_chain:     Ordered causal steps from trigger to effects.
         player_impacts:   Per-player impact summaries.
-        confidence_notes: Trust-relevant notes about result reliability.
-                          v1: plain strings generated by code heuristics.
-                          Future: structured ConfidenceNote type.
+        limitations:      Two-layer limitation disclosure
+                          (system + scenario-specific).
     """
 
     scenario: ScenarioDescriptor
     highlights: tuple[DifferenceHighlight, ...]
     causal_chain: tuple[CausalStep, ...]
     player_impacts: tuple[PlayerImpactSummary, ...]
-    confidence_notes: tuple[str, ...]
+    limitations: LimitationsDisclosure

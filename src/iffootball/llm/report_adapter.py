@@ -19,7 +19,6 @@ Semantic boundaries preserved:
 from __future__ import annotations
 
 from iffootball.llm.report_generation import (
-    DEFAULT_LIMITATIONS,
     PlayerImpactEntry,
     ReportInput,
 )
@@ -43,17 +42,19 @@ def structured_to_report_input(
           map to the existing ActionExplanationEntry contract (tp_type /
           sampled action / explanation). The existing prompt handles
           empty action_explanations gracefully.
-        - limitations uses DEFAULT_LIMITATIONS (system constraints),
-          not confidence_notes (scenario-specific uncertainty). Caller
-          can override via the limitations parameter.
+        - limitations merges system limitations (always shown) and
+          scenario limitations with severity="warning". System
+          limitations come from the StructuredExplanation, not
+          DEFAULT_LIMITATIONS. Caller can override via the limitations
+          parameter.
 
     Args:
         explanation: Completed StructuredExplanation.
-        limitations: Override limitations list. If None, uses
-                     DEFAULT_LIMITATIONS for the given language.
+        limitations: Override limitations list. If None, extracts
+                     from StructuredExplanation.limitations.
         n_runs:      Number of simulation runs (not stored in
                      StructuredExplanation; caller must provide).
-        lang:        Language for default limitations ("en" or "ja").
+        lang:        Language for limitation messages ("en" or "ja").
 
     Returns:
         ReportInput compatible with generate_report().
@@ -104,12 +105,19 @@ def structured_to_report_input(
             )
         )
 
-    # Limitations: use system-level defaults, not confidence_notes.
-    resolved_limitations = (
-        limitations
-        if limitations is not None
-        else list(DEFAULT_LIMITATIONS.get(lang, DEFAULT_LIMITATIONS["en"]))
-    )
+    # Limitations: system (always) + scenario warnings.
+    if limitations is not None:
+        resolved_limitations = limitations
+    else:
+        msg_attr = "message_ja" if lang == "ja" else "message_en"
+        resolved_limitations = [
+            getattr(item, msg_attr)
+            for item in explanation.limitations.system
+        ] + [
+            getattr(item, msg_attr)
+            for item in explanation.limitations.scenario
+            if item.severity == "warning"
+        ]
 
     return ReportInput(
         trigger_description=trigger_desc,

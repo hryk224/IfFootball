@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from iffootball.llm.report_adapter import structured_to_report_input
 from iffootball.simulation.structured_explanation import (
+    SYSTEM_LIMITATIONS,
     CausalStep,
     DifferenceHighlight,
     EvidenceItem,
+    LimitationCategory,
+    LimitationItem,
+    LimitationsDisclosure,
     PlayerImpactChange,
     PlayerImpactSummary,
     ScenarioDescriptor,
@@ -119,7 +123,18 @@ def _make_explanation() -> StructuredExplanation:
                 related_step_ids=("cs-001",),
             ),
         ),
-        confidence_notes=("Chain reaches depth 3.",),
+        limitations=LimitationsDisclosure(
+            system=SYSTEM_LIMITATIONS,
+            scenario=(
+                LimitationItem(
+                    category=LimitationCategory.CHAIN_DEPTH,
+                    message_en="Causal chain reaches depth 3.",
+                    message_ja="因果連鎖が深さ 3 に達しています。",
+                    severity="warning",
+                    related_step_ids=("cs-001",),
+                ),
+            ),
+        ),
     )
 
 
@@ -144,7 +159,7 @@ class TestStructuredToReportInput:
             highlights=(),
             causal_chain=(),
             player_impacts=(),
-            confidence_notes=(),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
         )
         ri = structured_to_report_input(exp, n_runs=5)
         assert "Wirtz" in ri.trigger_description
@@ -181,11 +196,12 @@ class TestStructuredToReportInput:
         ri = structured_to_report_input(_make_explanation(), n_runs=20)
         assert ri.n_runs == 20
 
-    def test_limitations_uses_defaults(self) -> None:
+    def test_limitations_includes_system_and_scenario_warnings(self) -> None:
         ri = structured_to_report_input(_make_explanation(), n_runs=10)
-        # Should use DEFAULT_LIMITATIONS, not confidence_notes.
-        assert "Chain reaches depth 3." not in ri.limitations
-        assert len(ri.limitations) >= 3  # DEFAULT_LIMITATIONS has 5 entries
+        # System limitations (5) + scenario warnings (1 depth warning).
+        assert len(ri.limitations) >= 6
+        # Scenario warning is included.
+        assert any("depth" in lim.lower() for lim in ri.limitations)
 
     def test_limitations_override(self) -> None:
         custom = ["Custom limitation 1", "Custom limitation 2"]
@@ -198,8 +214,10 @@ class TestStructuredToReportInput:
         ri = structured_to_report_input(
             _make_explanation(), n_runs=10, lang="ja"
         )
-        # Japanese limitations should be present.
-        assert len(ri.limitations) >= 3
+        # Japanese system + scenario limitations.
+        assert len(ri.limitations) >= 6
+        # At least one contains Japanese text.
+        assert any("シミュレート" in lim for lim in ri.limitations)
 
     def test_empty_explanation(self) -> None:
         exp = StructuredExplanation(
@@ -214,7 +232,7 @@ class TestStructuredToReportInput:
             highlights=(),
             causal_chain=(),
             player_impacts=(),
-            confidence_notes=(),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
         )
         ri = structured_to_report_input(exp, n_runs=5)
         assert ri.points_mean_a == 0.0

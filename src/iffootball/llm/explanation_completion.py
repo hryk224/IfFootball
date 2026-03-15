@@ -219,21 +219,15 @@ def _merge_response(
         else:
             merged_players.append(sp)
 
-    # Confidence notes — allow rewording but not adding/removing.
-    filled_notes = filled_data.get("confidence_notes", [])
-    merged_notes: list[str] = []
-    for i, sn in enumerate(skeleton.confidence_notes):
-        if i < len(filled_notes) and isinstance(filled_notes[i], str):
-            merged_notes.append(filled_notes[i])
-        else:
-            merged_notes.append(sn)
+    # Limitations — preserved from skeleton entirely.
+    # LLM cannot modify system or scenario limitations.
 
     return StructuredExplanation(
         scenario=skeleton.scenario,
         highlights=tuple(merged_highlights),
         causal_chain=tuple(merged_chain),
         player_impacts=tuple(merged_players),
-        confidence_notes=tuple(merged_notes),
+        limitations=skeleton.limitations,
     )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from iffootball.llm.explanation_completion import (
     _merge_response,
@@ -14,6 +15,7 @@ from iffootball.simulation.structured_explanation import (
     CausalStep,
     DifferenceHighlight,
     EvidenceItem,
+    LimitationsDisclosure,
     PlayerImpactChange,
     PlayerImpactSummary,
     ScenarioDescriptor,
@@ -101,7 +103,7 @@ def _make_skeleton() -> StructuredExplanation:
                 related_step_ids=("cs-001",),
             ),
         ),
-        confidence_notes=("Chain reaches depth 3.",),
+        limitations=LimitationsDisclosure(system=(), scenario=()),
     )
 
 
@@ -116,7 +118,6 @@ def _make_filled_response(skeleton: StructuredExplanation) -> str:
     data["player_impacts"][0]["changes"][0]["interpretation"]["statement"] = (
         "Form declined due to tactical confusion"
     )
-    data["confidence_notes"][0] = "Causal chain reaches depth 3."
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -289,18 +290,12 @@ class TestMergeResponse:
         result = _merge_response(skeleton, filled_data)
         assert result.scenario.trigger_type == "manager_change"
 
-    def test_confidence_notes_rewording(self) -> None:
+    def test_limitations_preserved_from_skeleton(self) -> None:
         skeleton = _make_skeleton()
-        filled_data = {"confidence_notes": ["Refined note wording."]}
+        filled_data: dict[str, Any] = {"limitations": {"system": [], "scenario": []}}
         result = _merge_response(skeleton, filled_data)
-        assert result.confidence_notes[0] == "Refined note wording."
-
-    def test_confidence_notes_count_preserved(self) -> None:
-        skeleton = _make_skeleton()
-        # LLM tries to add extra notes.
-        filled_data = {"confidence_notes": ["Note 1", "Extra note"]}
-        result = _merge_response(skeleton, filled_data)
-        assert len(result.confidence_notes) == 1
+        # Limitations always come from skeleton, not LLM.
+        assert result.limitations is skeleton.limitations
 
     def test_player_impact_axis_preserved(self) -> None:
         skeleton = _make_skeleton()

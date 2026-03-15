@@ -259,8 +259,59 @@
       "related_step_ids": ["cs-004"]
     }
   ],
-  "confidence_notes": [
-    "Causal chain reaches depth 3; effects beyond depth 2 carry increasing uncertainty.",
-    "50% of evidence relies on rule-based models rather than direct simulation output."
-  ]
+  "limitations": {
+    "system": [
+      {
+        "category": "model_boundary",
+        "message_en": "Match outcomes use a Poisson model with xG-based expected goals; in-match events (shots, passes) are not simulated.",
+        "message_ja": "試合結果は xG ベースの Poisson モデルで決定されます。試合内イベント（シュート、パス）はシミュレートされません。",
+        "severity": "warning",
+        "related_step_ids": []
+      },
+      {
+        "category": "estimation",
+        "message_en": "Tactical metrics (PPDA, possession, progressive passes) for the incoming manager are estimates, not simulation outputs.",
+        "message_ja": "後任監督の戦術指標（PPDA、ポゼッション、プログレッシブパス）は推定値であり、シミュレーション出力ではありません。",
+        "severity": "warning",
+        "related_step_ids": []
+      },
+      {
+        "category": "model_boundary",
+        "message_en": "Player technical attributes are fixed throughout the simulation; only dynamic state (form, fatigue, trust, understanding) changes.",
+        "message_ja": "選手の技術属性はシミュレーション中固定です。変化するのは動的状態（フォーム、疲労、信頼度、戦術理解度）のみです。",
+        "severity": "info",
+        "related_step_ids": []
+      },
+      {
+        "category": "estimation",
+        "message_en": "The action distribution at turning points is rule-based; LLM-based action selection is not yet implemented.",
+        "message_ja": "ターニングポイントでの行動分布はルールベースです。LLM ベースの行動選択はまだ実装されていません。",
+        "severity": "info",
+        "related_step_ids": []
+      },
+      {
+        "category": "model_boundary",
+        "message_en": "xGA/90 is a fixed baseline; the current model does not simulate defensive impact of manager changes.",
+        "message_ja": "xGA/90 は固定ベースラインです。現在のモデルは監督交代による守備への影響をシミュレートしません。",
+        "severity": "warning",
+        "related_step_ids": []
+      }
+    ],
+    "scenario": [
+      {
+        "category": "chain_depth",
+        "message_en": "Causal chain reaches depth 3; effects beyond depth 2 carry increasing uncertainty.",
+        "message_ja": "因果連鎖が深さ 3 に達しています。深さ 2 を超える効果は不確実性が増大します。",
+        "severity": "warning",
+        "related_step_ids": ["cs-004"]
+      },
+      {
+        "category": "estimation",
+        "message_en": "50% of evidence relies on rule-based models or LLM knowledge rather than direct simulation output.",
+        "message_ja": "根拠の 50% がルールベースモデルまたは LLM 知識に依存しており、シミュレーション直接出力ではありません。",
+        "severity": "warning",
+        "related_step_ids": []
+      }
+    ]
+  }
 }
