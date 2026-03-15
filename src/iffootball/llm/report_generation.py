@@ -259,6 +259,9 @@ def generate_report(
     if not _has_required_sections(report, lang=lang):
         return fallback
 
+    # Strip any quality notes or meta-commentary the LLM may have added.
+    report = _strip_quality_notes(report)
+
     return report
 
 
@@ -304,6 +307,25 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
     }
 
 
+def _strip_quality_notes(report: str) -> str:
+    """Remove quality notes or meta-commentary from report end."""
+    # Remove paragraphs starting with quality/confidence markers.
+    lines = report.rstrip().split("\n")
+    while lines:
+        last = lines[-1].strip()
+        if last.startswith("*Quality note:") or last.startswith("*品質注記:"):
+            lines.pop()
+            # Also remove preceding --- separator if present.
+            if lines and lines[-1].strip() == "---":
+                lines.pop()
+            continue
+        if not last:
+            lines.pop()
+            continue
+        break
+    return "\n".join(lines)
+
+
 def _has_required_sections(report: str, lang: str = "en") -> bool:
     """Check that the report contains all required section headings."""
     sections = REQUIRED_SECTIONS.get(lang, REQUIRED_SECTIONS["en"])
@@ -311,3 +333,63 @@ def _has_required_sections(report: str, lang: str = "en") -> bool:
         if heading not in report:
             return False
     return True
+
+
+import re  # noqa: E402
+
+
+def _validate_player_facts(report: str, report_input: ReportInput) -> bool:
+    """Check for likely player value mix-ups in the report.
+
+    Focuses on form_diff and trust_diff (high individual variance).
+    Excludes understanding_diff (often shared across all players).
+    Returns False if a likely misattribution is detected.
+    """
+    for p in report_input.player_impacts:
+        if p.player_name not in report:
+            continue
+
+        # Extract text near this player's name (up to next ## or end).
+        player_pattern = re.escape(p.player_name) + r"[^#]*?(?=\n##|\Z)"
+        match = re.search(player_pattern, report, re.DOTALL)
+        if not match:
+            continue
+
+        section_text = match.group(0)
+        numbers_in_text = {
+            abs(float(n)) for n in re.findall(r"-?\d+\.\d+", section_text)
+        }
+
+        # This player's differentiating values (form + trust only).
+        player_values = {
+            abs(round(p.form_diff, 2)),
+            abs(round(p.trust_diff, 2)),
+        }
+
+        # Other players' form + trust values.
+        other_values: set[float] = set()
+        for other in report_input.player_impacts:
+            if other.player_name == p.player_name:
+                continue
+            other_values |= {
+                abs(round(other.form_diff, 2)),
+                abs(round(other.trust_diff, 2)),
+            }
+
+        # Only flag values unique to other players.
+        unique_other = other_values - player_values
+        if numbers_in_text & unique_other:
+            return False
+
+    return True
+
+
+# Japanese dangling sentence endings.
+_JA_DANGLING_ENDINGS = re.compile(
+    r"(が|けれど|しかし|一方で|ただし|ものの)\s*$", re.MULTILINE
+)
+
+
+def _has_dangling_sentences(report: str) -> bool:
+    """Check for incomplete Japanese sentences ending with conjunctions."""
+    return bool(_JA_DANGLING_ENDINGS.search(report))
