@@ -664,8 +664,17 @@ def _render_summary(
         )
 
     # Summary card.
+    report_lang = st.session_state.get("_report_lang", "en")
     with st.container(border=True):
         st.markdown(headline)
+        if report_lang == "ja":
+            st.caption(
+                f"以下の勝ち点は、残り試合を {n_runs} 回シミュレーションしたときの平均総勝ち点です。"
+            )
+        else:
+            st.caption(
+                f"Points below are mean total points across remaining fixtures over {n_runs} simulation runs."
+            )
         col1, col2, col3 = st.columns(3)
         col1.metric(
             "Points (mean)",
@@ -678,7 +687,11 @@ def _render_summary(
             delta=f"{comparison.delta.points_median_diff:+.1f}",
         )
         col3.metric("Runs", f"{n_runs}")
-        st.caption("This is a scenario comparison, not a prediction.")
+        st.caption(
+            "これはシナリオ比較であり、予測ではありません。"
+            if report_lang == "ja"
+            else "This is a scenario comparison, not a prediction."
+        )
 
 
 def _render_team_radar(
@@ -851,6 +864,8 @@ def _render_report(
             report_md = generate_report(
                 llm_client, report_input, lang=report_lang
             )
+            # Strip Summary section — already shown at page top.
+            report_md = _strip_summary_section(report_md, lang=report_lang)
             st.markdown(report_md)
             return
         except Exception:
@@ -859,6 +874,23 @@ def _render_report(
     # Fallback: data-only report.
     report_lang = st.session_state.get("_report_lang", "en")
     _render_data_report(report_input, lang=report_lang)
+
+
+def _strip_summary_section(report_md: str, lang: str = "en") -> str:
+    """Remove the Summary section from LLM report (shown separately at top)."""
+    summary_heading = "## Summary" if lang == "en" else "## サマリー"
+    if summary_heading not in report_md:
+        return report_md
+
+    # Find Summary heading and the next ## heading after it.
+    start = report_md.index(summary_heading)
+    rest = report_md[start + len(summary_heading) :]
+    next_heading = rest.find("\n## ")
+    if next_heading == -1:
+        # Summary is the only section — return empty.
+        return report_md[:start].strip()
+    # Remove from Summary heading to the next heading.
+    return (report_md[:start] + rest[next_heading + 1 :]).strip()
 
 
 def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
@@ -870,6 +902,7 @@ def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
     _L = _DATA_REPORT_LABELS.get(lang, _DATA_REPORT_LABELS["en"])
 
     st.subheader(_L["key_differences"])
+    st.caption(_L["points_definition"].format(n_runs=report_input.n_runs))
     st.write(
         f"- {_L['mean_points']}: {_L['no_change']} = {report_input.points_mean_a:.1f}, "
         f"{_L['with_change']} = {report_input.points_mean_b:.1f} "
@@ -903,7 +936,8 @@ def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
 _DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
     "en": {
         "key_differences": "Key Differences",
-        "mean_points": "Mean points",
+        "points_definition": "Mean total points across remaining fixtures over {n_runs} simulation runs.",
+        "mean_points": "Mean total points",
         "no_change": "no change",
         "with_change": "with change",
         "fact": "fact",
@@ -919,7 +953,8 @@ _DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
     },
     "ja": {
         "key_differences": "主な差分",
-        "mean_points": "平均勝ち点",
+        "points_definition": "残り試合を {n_runs} 回シミュレーションしたときの平均総勝ち点です。",
+        "mean_points": "平均総勝ち点",
         "no_change": "変更なし",
         "with_change": "変更あり",
         "fact": "事実",
