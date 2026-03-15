@@ -16,6 +16,7 @@ Provides a Database class that persists and restores domain objects:
                        run_results are excluded — use run_results=()
                        on load since full per-run data is too large
                        to persist and can be reproduced from the same seed)
+  - ComparisonMeta    (rng_seed, n_runs, trigger_summary, created_at)
 
 Identifier convention (M1):
   player_id, team_name, manager_name, and opponent_name are used as canonical
@@ -52,6 +53,8 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +69,44 @@ from iffootball.simulation.comparison import (
     ComparisonResult,
     DeltaMetrics,
 )
+
+# ---------------------------------------------------------------------------
+# Comparison metadata types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ComparisonMeta:
+    """Metadata for a saved comparison result.
+
+    Attributes:
+        rng_seed:        Random seed used for reproducibility.
+        n_runs:          Number of simulation runs per branch.
+        trigger_summary: Human-readable trigger description. This is a
+                         display label, not a machine-parseable reconstruction
+                         of the trigger. Do not use it to rebuild triggers.
+        created_at:      UTC ISO 8601 timestamp of when the result was saved.
+    """
+
+    rng_seed: int
+    n_runs: int
+    trigger_summary: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class ComparisonResultWithMeta:
+    """ComparisonResult paired with its persistence metadata.
+
+    Attributes:
+        result: The aggregated A/B comparison result.
+        meta:   Persistence metadata (seed, runs, trigger, timestamp).
+                None when loaded from legacy rows that lack metadata.
+    """
+
+    result: ComparisonResult
+    meta: ComparisonMeta | None
+
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -195,7 +236,11 @@ CREATE TABLE IF NOT EXISTS comparison_results (
     comparison_key        TEXT NOT NULL PRIMARY KEY,
     no_change_json        TEXT NOT NULL,
     with_change_json      TEXT NOT NULL,
-    delta_json            TEXT NOT NULL
+    delta_json            TEXT NOT NULL,
+    rng_seed              INTEGER,
+    n_runs                INTEGER,
+    trigger_summary       TEXT,
+    created_at            TEXT
 );
 """
 
@@ -801,8 +846,10 @@ class Database:
 
         Args:
             comparison_key: Identifies the comparison this run belongs to.
-            run_id:         Identifies the specific run (e.g. "a_0", "b_3").
-                            Naming convention is caller's responsibility.
+            run_id:         Identifies the specific run. Recommended format:
+                            "{branch}_{run_index}" where branch is "a" (no
+                            change) or "b" (with trigger), and run_index is
+                            0-based. Examples: "a_0", "b_3".
             events:         Ordered list of cascade events.
         """
         pk = (comparison_key, run_id)
@@ -864,26 +911,47 @@ class Database:
         self,
         comparison_key: str,
         result: ComparisonResult,
+        *,
+        rng_seed: int,
+        trigger_summary: str,
     ) -> None:
-        """Persist a ComparisonResult's aggregated statistics.
+        """Persist a ComparisonResult's aggregated statistics with metadata.
 
         run_results are excluded from persistence (too large). On load,
         run_results is restored as an empty tuple. Full per-run data can
         be reproduced by re-running with the same seed.
+
+        Args:
+            comparison_key:  Unique identifier for this comparison.
+            result:          The ComparisonResult to persist.
+            rng_seed:        Random seed used for reproducibility.
+            trigger_summary: Human-readable trigger description (display
+                             label only; not for trigger reconstruction).
         """
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        n_runs = result.no_change.n_runs
+
         self._conn.execute(
             """
-            INSERT INTO comparison_results VALUES (?,?,?,?)
+            INSERT INTO comparison_results VALUES (?,?,?,?,?,?,?,?)
             ON CONFLICT(comparison_key) DO UPDATE SET
                 no_change_json=excluded.no_change_json,
                 with_change_json=excluded.with_change_json,
-                delta_json=excluded.delta_json
+                delta_json=excluded.delta_json,
+                rng_seed=excluded.rng_seed,
+                n_runs=excluded.n_runs,
+                trigger_summary=excluded.trigger_summary,
+                created_at=excluded.created_at
             """,
             (
                 comparison_key,
                 _encode_aggregated(result.no_change),
                 _encode_aggregated(result.with_change),
                 _encode_delta(result.delta),
+                rng_seed,
+                n_runs,
+                trigger_summary,
+                created_at,
             ),
         )
         self._conn.commit()
@@ -891,11 +959,14 @@ class Database:
     def load_comparison_result(
         self,
         comparison_key: str,
-    ) -> ComparisonResult | None:
-        """Load a ComparisonResult. Returns None if not found.
+    ) -> ComparisonResultWithMeta | None:
+        """Load a ComparisonResult with metadata. Returns None if not found.
 
         run_results on both AggregatedResult instances are empty tuples
         since per-run SimulationResult data is not persisted.
+
+        Returns ComparisonResultWithMeta where meta is None for legacy
+        rows that lack metadata columns.
         """
         r = self._conn.execute(
             """
@@ -905,8 +976,22 @@ class Database:
         ).fetchone()
         if r is None:
             return None
-        return ComparisonResult(
+
+        result = ComparisonResult(
             no_change=_decode_aggregated(r["no_change_json"]),
             with_change=_decode_aggregated(r["with_change_json"]),
             delta=_decode_delta(r["delta_json"]),
         )
+
+        # Build metadata (None for legacy rows without metadata).
+        if r["rng_seed"] is not None and r["created_at"] is not None:
+            meta = ComparisonMeta(
+                rng_seed=int(r["rng_seed"]),
+                n_runs=int(r["n_runs"]),
+                trigger_summary=str(r["trigger_summary"] or ""),
+                created_at=str(r["created_at"]),
+            )
+        else:
+            meta = None
+
+        return ComparisonResultWithMeta(result=result, meta=meta)

@@ -612,35 +612,35 @@ def _make_comparison_result() -> ComparisonResult:
 class TestComparisonResult:
     def test_save_and_load_roundtrip(self, db: Database) -> None:
         cr = _make_comparison_result()
-        db.save_comparison_result("test_key", cr)
+        db.save_comparison_result("test_key", cr, rng_seed=42, trigger_summary="test trigger")
         loaded = db.load_comparison_result("test_key")
         assert loaded is not None
-        assert loaded.no_change.n_runs == 3
-        assert loaded.no_change.total_points_mean == pytest.approx(5.0)
-        assert loaded.with_change.total_points_mean == pytest.approx(7.0)
-        assert loaded.delta.points_mean_diff == pytest.approx(2.0)
+        assert loaded.result.no_change.n_runs == 3
+        assert loaded.result.no_change.total_points_mean == pytest.approx(5.0)
+        assert loaded.result.with_change.total_points_mean == pytest.approx(7.0)
+        assert loaded.result.delta.points_mean_diff == pytest.approx(2.0)
 
     def test_cascade_event_counts_preserved(self, db: Database) -> None:
         cr = _make_comparison_result()
-        db.save_comparison_result("k", cr)
+        db.save_comparison_result("k", cr, rng_seed=42, trigger_summary="test trigger")
         loaded = db.load_comparison_result("k")
         assert loaded is not None
-        assert loaded.with_change.cascade_event_counts["trust_decline"] == pytest.approx(0.5)
+        assert loaded.result.with_change.cascade_event_counts["trust_decline"] == pytest.approx(0.5)
 
     def test_returns_none_when_missing(self, db: Database) -> None:
         assert db.load_comparison_result("nonexistent") is None
 
     def test_run_results_empty_on_load(self, db: Database) -> None:
         cr = _make_comparison_result()
-        db.save_comparison_result("k", cr)
+        db.save_comparison_result("k", cr, rng_seed=42, trigger_summary="test trigger")
         loaded = db.load_comparison_result("k")
         assert loaded is not None
-        assert loaded.no_change.run_results == ()
-        assert loaded.with_change.run_results == ()
+        assert loaded.result.no_change.run_results == ()
+        assert loaded.result.with_change.run_results == ()
 
     def test_upsert(self, db: Database) -> None:
         cr = _make_comparison_result()
-        db.save_comparison_result("k", cr)
+        db.save_comparison_result("k", cr, rng_seed=42, trigger_summary="test trigger")
         # Save again with different data
         updated_agg = AggregatedResult(
             n_runs=5,
@@ -655,7 +655,29 @@ class TestComparisonResult:
             with_change=updated_agg,
             delta=DeltaMetrics(0.0, 0.0, {}),
         )
-        db.save_comparison_result("k", updated)
+        db.save_comparison_result("k", updated, rng_seed=99, trigger_summary="updated")
         loaded = db.load_comparison_result("k")
         assert loaded is not None
-        assert loaded.no_change.n_runs == 5
+        assert loaded.result.no_change.n_runs == 5
+
+    def test_metadata_roundtrip(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result(
+            "meta_key", cr, rng_seed=123, trigger_summary="Manager change: A -> B"
+        )
+        loaded = db.load_comparison_result("meta_key")
+        assert loaded is not None
+        assert loaded.meta is not None
+        assert loaded.meta.rng_seed == 123
+        assert loaded.meta.n_runs == 3
+        assert loaded.meta.trigger_summary == "Manager change: A -> B"
+
+    def test_created_at_is_utc_iso8601(self, db: Database) -> None:
+        cr = _make_comparison_result()
+        db.save_comparison_result("ts_key", cr, rng_seed=42, trigger_summary="test trigger")
+        loaded = db.load_comparison_result("ts_key")
+        assert loaded is not None
+        assert loaded.meta is not None
+        # ISO 8601 UTC format: YYYY-MM-DDTHH:MM:SSZ
+        assert loaded.meta.created_at.endswith("Z")
+        assert "T" in loaded.meta.created_at
