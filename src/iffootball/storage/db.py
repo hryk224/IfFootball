@@ -42,10 +42,9 @@ Serialisation:
   str | None           → TEXT / NULL
 
 Note on cascade_events:
-  load_cascade_events() returns [] for both "explicitly saved empty run"
-  and "never saved". There is no header table to distinguish these cases.
-  If that distinction is needed for auditing, a header table can be added
-  in a future milestone.
+  cascade_runs header table tracks which runs have been saved.
+  Use cascade_run_was_saved() to distinguish "saved empty" from
+  "never saved". load_cascade_events() returns [] for both cases.
 """
 
 from __future__ import annotations
@@ -101,11 +100,11 @@ class ComparisonResultWithMeta:
     Attributes:
         result: The aggregated A/B comparison result.
         meta:   Persistence metadata (seed, runs, trigger, timestamp).
-                None when loaded from legacy rows that lack metadata.
+                Always present under schema version 2+.
     """
 
     result: ComparisonResult
-    meta: ComparisonMeta | None
+    meta: ComparisonMeta
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +113,14 @@ class ComparisonResultWithMeta:
 
 # Increment on ANY DDL change (table/column add, rename, remove).
 # Version history:
-#   1 — Initial schema (M1-M5: player_agents, team_baselines, manager_agents,
+#   1 — Initial schema: player_agents, team_baselines, manager_agents,
 #       opponent_strengths, fixture_lists, fixtures, league_contexts,
-#       cascade_events, comparison_results with metadata columns)
-_SCHEMA_VERSION = 1
+#       cascade_events, comparison_results (metadata columns nullable),
+#       db_meta. Pre-versioning DDL changes (metadata column addition)
+#       are folded into version 1 as the first versioned baseline.
+#   2 — Hardening: CHECK constraints on player_agents/team_baselines,
+#       cascade_runs header table, comparison_results metadata NOT NULL.
+_SCHEMA_VERSION = 2
 
 
 class SchemaVersionError(Exception):
@@ -142,21 +145,21 @@ CREATE TABLE IF NOT EXISTS player_agents (
     position_name         TEXT    NOT NULL,
     role_family           TEXT    NOT NULL,
     broad_position        TEXT    NOT NULL,
-    pace                  REAL    NOT NULL,
-    passing               REAL    NOT NULL,
-    shooting              REAL    NOT NULL,
-    pressing              REAL    NOT NULL,
-    defending             REAL    NOT NULL,
-    physicality           REAL    NOT NULL,
-    consistency           REAL    NOT NULL,
-    tactical_adaptability REAL    NOT NULL,
-    leadership            REAL    NOT NULL,
-    pressure_resistance   REAL    NOT NULL,
-    current_form          REAL    NOT NULL,
-    fatigue               REAL    NOT NULL,
-    tactical_understanding REAL   NOT NULL,
-    manager_trust         REAL    NOT NULL,
-    bench_streak          INTEGER NOT NULL,
+    pace                  REAL    NOT NULL CHECK(pace >= 0 AND pace <= 100),
+    passing               REAL    NOT NULL CHECK(passing >= 0 AND passing <= 100),
+    shooting              REAL    NOT NULL CHECK(shooting >= 0 AND shooting <= 100),
+    pressing              REAL    NOT NULL CHECK(pressing >= 0 AND pressing <= 100),
+    defending             REAL    NOT NULL CHECK(defending >= 0 AND defending <= 100),
+    physicality           REAL    NOT NULL CHECK(physicality >= 0 AND physicality <= 100),
+    consistency           REAL    NOT NULL CHECK(consistency >= 0 AND consistency <= 100),
+    tactical_adaptability REAL    NOT NULL CHECK(tactical_adaptability >= 0 AND tactical_adaptability <= 100),
+    leadership            REAL    NOT NULL CHECK(leadership >= 0 AND leadership <= 100),
+    pressure_resistance   REAL    NOT NULL CHECK(pressure_resistance >= 0 AND pressure_resistance <= 100),
+    current_form          REAL    NOT NULL CHECK(current_form >= 0 AND current_form <= 1),
+    fatigue               REAL    NOT NULL CHECK(fatigue >= 0 AND fatigue <= 1),
+    tactical_understanding REAL   NOT NULL CHECK(tactical_understanding >= 0 AND tactical_understanding <= 1),
+    manager_trust         REAL    NOT NULL CHECK(manager_trust >= 0 AND manager_trust <= 1),
+    bench_streak          INTEGER NOT NULL CHECK(bench_streak >= 0),
     PRIMARY KEY (player_id, competition_id, season_id)
 );
 
@@ -165,16 +168,16 @@ CREATE TABLE IF NOT EXISTS team_baselines (
     competition_id        INTEGER NOT NULL,
     season_id             INTEGER NOT NULL,
     played_match_ids      TEXT    NOT NULL,
-    xg_for_per90          REAL    NOT NULL,
-    xg_against_per90      REAL    NOT NULL,
+    xg_for_per90          REAL    NOT NULL CHECK(xg_for_per90 >= 0),
+    xg_against_per90      REAL    NOT NULL CHECK(xg_against_per90 >= 0),
     ppda                  REAL,
-    progressive_passes_per90 REAL NOT NULL,
-    possession_pct        REAL    NOT NULL,
-    league_position       INTEGER NOT NULL,
+    progressive_passes_per90 REAL NOT NULL CHECK(progressive_passes_per90 >= 0),
+    possession_pct        REAL    NOT NULL CHECK(possession_pct >= 0 AND possession_pct <= 1),
+    league_position       INTEGER NOT NULL CHECK(league_position >= 1),
     points_to_safety      INTEGER NOT NULL,
     points_to_title       INTEGER NOT NULL,
-    matches_remaining     INTEGER NOT NULL,
-    cultural_inertia      REAL    NOT NULL,
+    matches_remaining     INTEGER NOT NULL CHECK(matches_remaining >= 0),
+    cultural_inertia      REAL    NOT NULL CHECK(cultural_inertia >= 0 AND cultural_inertia <= 1),
     PRIMARY KEY (team_name, competition_id, season_id)
 );
 
@@ -240,6 +243,14 @@ CREATE TABLE IF NOT EXISTS league_contexts (
     PRIMARY KEY (competition_id, season_id)
 );
 
+CREATE TABLE IF NOT EXISTS cascade_runs (
+    comparison_key        TEXT    NOT NULL,
+    run_id                TEXT    NOT NULL,
+    saved_at              TEXT    NOT NULL,
+    event_count           INTEGER NOT NULL CHECK(event_count >= 0),
+    PRIMARY KEY (comparison_key, run_id)
+);
+
 CREATE TABLE IF NOT EXISTS cascade_events (
     comparison_key        TEXT    NOT NULL,
     run_id                TEXT    NOT NULL,
@@ -254,14 +265,14 @@ CREATE TABLE IF NOT EXISTS cascade_events (
 );
 
 CREATE TABLE IF NOT EXISTS comparison_results (
-    comparison_key        TEXT NOT NULL PRIMARY KEY,
-    no_change_json        TEXT NOT NULL,
-    with_change_json      TEXT NOT NULL,
-    delta_json            TEXT NOT NULL,
-    rng_seed              INTEGER,
-    n_runs                INTEGER,
-    trigger_summary       TEXT,
-    created_at            TEXT
+    comparison_key        TEXT    NOT NULL PRIMARY KEY,
+    no_change_json        TEXT    NOT NULL,
+    with_change_json      TEXT    NOT NULL,
+    delta_json            TEXT    NOT NULL,
+    rng_seed              INTEGER NOT NULL,
+    n_runs                INTEGER NOT NULL,
+    trigger_summary       TEXT    NOT NULL,
+    created_at            TEXT    NOT NULL
 );
 """
 
@@ -930,6 +941,7 @@ class Database:
             events:         Ordered list of cascade events.
         """
         pk = (comparison_key, run_id)
+        saved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = [
             (
                 comparison_key,
@@ -945,6 +957,17 @@ class Database:
             for ordinal, e in enumerate(events)
         ]
         with self._conn:
+            # Record the run in the header table (even if empty).
+            self._conn.execute(
+                """
+                INSERT INTO cascade_runs (comparison_key, run_id, saved_at, event_count)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(comparison_key, run_id) DO UPDATE SET
+                    saved_at=excluded.saved_at,
+                    event_count=excluded.event_count
+                """,
+                (comparison_key, run_id, saved_at, len(events)),
+            )
             self._conn.execute(
                 "DELETE FROM cascade_events WHERE comparison_key=? AND run_id=?",
                 pk,
@@ -953,6 +976,18 @@ class Database:
                 "INSERT INTO cascade_events VALUES (?,?,?,?,?,?,?,?,?)",
                 rows,
             )
+
+    def cascade_run_was_saved(
+        self,
+        comparison_key: str,
+        run_id: str,
+    ) -> bool:
+        """Check if a cascade run was explicitly saved (even if empty)."""
+        r = self._conn.execute(
+            "SELECT 1 FROM cascade_runs WHERE comparison_key=? AND run_id=?",
+            (comparison_key, run_id),
+        ).fetchone()
+        return r is not None
 
     def load_cascade_events(
         self,
@@ -1041,9 +1076,7 @@ class Database:
 
         run_results on both AggregatedResult instances are empty tuples
         since per-run SimulationResult data is not persisted.
-
-        Returns ComparisonResultWithMeta where meta is None for legacy
-        rows that lack metadata columns.
+        Metadata is always present (NOT NULL since schema version 2).
         """
         r = self._conn.execute(
             """
@@ -1060,15 +1093,11 @@ class Database:
             delta=_decode_delta(r["delta_json"]),
         )
 
-        # Build metadata (None for legacy rows without metadata).
-        if r["rng_seed"] is not None and r["created_at"] is not None:
-            meta = ComparisonMeta(
-                rng_seed=int(r["rng_seed"]),
-                n_runs=int(r["n_runs"]),
-                trigger_summary=str(r["trigger_summary"] or ""),
-                created_at=str(r["created_at"]),
-            )
-        else:
-            meta = None
+        meta = ComparisonMeta(
+            rng_seed=int(r["rng_seed"]),
+            n_runs=int(r["n_runs"]),
+            trigger_summary=str(r["trigger_summary"]),
+            created_at=str(r["created_at"]),
+        )
 
         return ComparisonResultWithMeta(result=result, meta=meta)

@@ -140,6 +140,7 @@ class TestDatabase:
         assert "fixture_lists" in tables
         assert "fixtures" in tables
         assert "db_meta" in tables
+        assert "cascade_runs" in tables
 
 
 class TestSchemaVersion:
@@ -635,6 +636,23 @@ class TestCascadeEvents:
         db.save_cascade_events("cmp1", "b_0", e2)
         assert len(db.load_cascade_events("cmp1", "a_0")) == 1
         assert len(db.load_cascade_events("cmp1", "b_0")) == 1
+
+    def test_run_was_saved_true(self, db: Database) -> None:
+        db.save_cascade_events("cmp1", "a_0", [])
+        assert db.cascade_run_was_saved("cmp1", "a_0") is True
+
+    def test_run_was_saved_false(self, db: Database) -> None:
+        assert db.cascade_run_was_saved("nonexistent", "run_0") is False
+
+    def test_saved_empty_distinguishable_from_never_saved(self, db: Database) -> None:
+        # Save an empty run.
+        db.save_cascade_events("cmp1", "a_0", [])
+        # Saved empty: was_saved=True, events=[]
+        assert db.cascade_run_was_saved("cmp1", "a_0") is True
+        assert db.load_cascade_events("cmp1", "a_0") == []
+        # Never saved: was_saved=False, events=[]
+        assert db.cascade_run_was_saved("cmp1", "b_0") is False
+        assert db.load_cascade_events("cmp1", "b_0") == []
 
 
 # ---------------------------------------------------------------------------
