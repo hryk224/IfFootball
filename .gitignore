@@ -52,6 +52,9 @@ htmlcov/
 node_modules/
 package-lock.json
 
+# Backtest / simulation output
+output/
+
 # 評価結果スナップショット（生成物のため除外。基準スナップショットは evals/golden_results/ へ）
 evals/results/*.json
 !evals/results/.gitkeep
