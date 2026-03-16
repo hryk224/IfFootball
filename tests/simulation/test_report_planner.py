@@ -180,7 +180,7 @@ class TestPlanReport:
         explanation = _make_explanation()
         plan = plan_report(explanation, DisplayContext.STANDARD)
 
-        assert len(plan.sections) == 5
+        assert len(plan.sections) == 6
         for section in plan.sections:
             assert section.include is True
             assert section.detail_level == DetailLevel.NORMAL

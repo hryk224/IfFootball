@@ -124,6 +124,15 @@ def structured_to_report_input(
         PlayerImpactMeta(shared_resets=shared_resets) if shared_resets else None
     )
 
+    # Render validation signals from plan (code-generated, no LLM).
+    signals_md = ""
+    if plan is not None and plan.validation_signals:
+        from iffootball.simulation.validation_signals import (
+            render_signals_markdown,
+        )
+
+        signals_md = render_signals_markdown(plan.validation_signals)
+
     return ReportInput(
         trigger_description=trigger_desc,
         points_mean_a=points_a,
@@ -139,6 +148,7 @@ def structured_to_report_input(
         causal_steps=causal_steps,
         player_impact_details=player_details,
         player_impact_meta=player_meta,
+        validation_signals_md=signals_md,
     )
 
 

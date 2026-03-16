@@ -381,6 +381,44 @@ def generate_scenario_limitations(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Validation signals
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ValidationSignal:
+    """An observation point for post-hoc hypothesis checking.
+
+    Tells the reader what to watch in the first few matches after the
+    trigger to verify whether the simulation's causal chain holds.
+
+    Not a recommendation — a testable observation.
+
+    Attributes:
+        metric:          What to observe (StatsBomb metric or event type).
+        observation_window: When to look (e.g. "first 3 matches").
+        metric_direction:   Direction of the metric change this signal expects
+                            ("increase" / "decrease" / "stable").
+        hypothesis_support: What this direction means for the hypothesis
+                            ("supports" / "contradicts"). When the metric moves
+                            in metric_direction, the hypothesis is supported.
+        reason:          Why this metric matters for this scenario.
+        related_step_id: CausalStep this signal validates (if any).
+        confidence:      Confidence level, determined by causal depth:
+                         "high" = depth 1 step, "medium" = depth 2 or
+                         player impact, "low" = highlight only.
+    """
+
+    metric: str
+    observation_window: str
+    metric_direction: str  # "increase" / "decrease" / "stable"
+    hypothesis_support: str  # "supports" / "contradicts"
+    reason: str
+    related_step_id: str | None
+    confidence: str  # "high" / "medium" / "low"
+
+
 @dataclass(frozen=True)
 class StructuredExplanation:
     """Complete structured explanation for a scenario comparison.

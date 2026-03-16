@@ -26,6 +26,7 @@ from typing import Literal
 from iffootball.simulation.structured_explanation import (
     DifferenceHighlight,
     StructuredExplanation,
+    ValidationSignal,
 )
 
 
@@ -55,6 +56,7 @@ class SectionType(str, Enum):
     CAUSAL_CHAIN = "causal_chain"
     PLAYER_IMPACT = "player_impact"
     LIMITATIONS = "limitations"
+    WHAT_TO_WATCH = "what_to_watch"
 
 
 class DetailLevel(str, Enum):
@@ -185,6 +187,7 @@ class ReportPlan:
         expanded_step_ids:    CausalStep IDs to show expanded.
         collapsed_step_ids:   CausalStep IDs to show collapsed.
         limitation_placement: Limitation visibility settings.
+        validation_signals:   Early observation points for hypothesis checking.
     """
 
     sections: tuple[SectionPlan, ...]
@@ -193,6 +196,7 @@ class ReportPlan:
     expanded_step_ids: frozenset[str]
     collapsed_step_ids: frozenset[str]
     limitation_placement: LimitationPlacement
+    validation_signals: tuple[ValidationSignal, ...] = ()
 
     def to_display_hints(self) -> DisplayHints:
         """Convert to DisplayHints DTO for ReportInput."""
@@ -246,6 +250,9 @@ _SECTION_TEMPLATES: dict[DisplayContext, list[SectionPlan]] = {
         SectionPlan(
             SectionType.LIMITATIONS, include=True, detail_level=DetailLevel.BRIEF
         ),
+        SectionPlan(
+            SectionType.WHAT_TO_WATCH, include=False, detail_level=DetailLevel.BRIEF
+        ),
     ],
     DisplayContext.STANDARD: [
         SectionPlan(
@@ -263,6 +270,9 @@ _SECTION_TEMPLATES: dict[DisplayContext, list[SectionPlan]] = {
         SectionPlan(
             SectionType.LIMITATIONS, include=True, detail_level=DetailLevel.NORMAL
         ),
+        SectionPlan(
+            SectionType.WHAT_TO_WATCH, include=True, detail_level=DetailLevel.NORMAL
+        ),
     ],
     DisplayContext.ANALYST: [
         SectionPlan(SectionType.SUMMARY, include=True, detail_level=DetailLevel.FULL),
@@ -277,6 +287,9 @@ _SECTION_TEMPLATES: dict[DisplayContext, list[SectionPlan]] = {
         ),
         SectionPlan(
             SectionType.LIMITATIONS, include=True, detail_level=DetailLevel.FULL
+        ),
+        SectionPlan(
+            SectionType.WHAT_TO_WATCH, include=True, detail_level=DetailLevel.FULL
         ),
     ],
 }
@@ -330,6 +343,19 @@ def plan_report(
     expanded, collapsed = _classify_steps(explanation, display_context)
     limitation_placement = _build_limitation_placement(display_context)
 
+    # Generate validation signals if the section is included.
+    signals: tuple[ValidationSignal, ...] = ()
+    show_signals = any(
+        s.section_type == SectionType.WHAT_TO_WATCH and s.include
+        for s in sections
+    )
+    if show_signals:
+        from iffootball.simulation.validation_signals import (
+            generate_validation_signals,
+        )
+
+        signals = generate_validation_signals(explanation)
+
     return ReportPlan(
         sections=sections,
         summary_priority=summary_priority,
@@ -337,6 +363,7 @@ def plan_report(
         expanded_step_ids=expanded,
         collapsed_step_ids=collapsed,
         limitation_placement=limitation_placement,
+        validation_signals=signals,
     )
 
 

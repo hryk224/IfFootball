@@ -322,7 +322,7 @@ class TestReportInput:
         assert len(DEFAULT_LIMITATIONS["en"]) >= 3
 
     def test_required_sections_defined(self) -> None:
-        assert len(REQUIRED_SECTIONS) == 5
+        assert len(REQUIRED_SECTIONS) == 5  # LLM-generated sections only
         assert "## Summary" in REQUIRED_SECTIONS
         assert "## Limitations" in REQUIRED_SECTIONS
 
