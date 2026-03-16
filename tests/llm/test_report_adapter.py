@@ -24,6 +24,96 @@ from iffootball.simulation.structured_explanation import (
 # ---------------------------------------------------------------------------
 
 
+def _make_player_impact(
+    name: str,
+    form_diff: float = -0.1,
+    fatigue_diff: float = 0.02,
+    understanding_diff: float = -0.25,
+    trust_diff: float = -0.05,
+    impact_score: float = 0.3,
+) -> PlayerImpactSummary:
+    """Build a PlayerImpactSummary with standard 4 axes."""
+    return PlayerImpactSummary(
+        player_name=name,
+        impact_score=impact_score,
+        changes=(
+            PlayerImpactChange(
+                axis="form",
+                diff=form_diff,
+                interpretation=EvidenceItem(
+                    statement=f"Form diff for {name}",
+                    label="data",
+                    source="simulation_output",
+                ),
+            ),
+            PlayerImpactChange(
+                axis="fatigue",
+                diff=fatigue_diff,
+                interpretation=EvidenceItem(
+                    statement=f"Fatigue diff for {name}",
+                    label="data",
+                    source="simulation_output",
+                ),
+            ),
+            PlayerImpactChange(
+                axis="understanding",
+                diff=understanding_diff,
+                interpretation=EvidenceItem(
+                    statement="Tactical reset",
+                    label="data",
+                    source="simulation_output",
+                ),
+            ),
+            PlayerImpactChange(
+                axis="trust",
+                diff=trust_diff,
+                interpretation=EvidenceItem(
+                    statement=f"Trust diff for {name}",
+                    label="data",
+                    source="simulation_output",
+                ),
+            ),
+        ),
+        related_step_ids=(),
+    )
+
+
+def _make_multi_player_explanation() -> StructuredExplanation:
+    """Build explanation with 3 players sharing understanding_diff=-0.25."""
+    return StructuredExplanation(
+        scenario=ScenarioDescriptor(
+            trigger_type="manager_change",
+            team_name="Arsenal",
+            detail={
+                "outgoing_manager": "Arteta",
+                "incoming_manager": "Xabi Alonso",
+            },
+        ),
+        highlights=(
+            DifferenceHighlight(
+                metric_name="total_points_mean",
+                value_a=50.0,
+                value_b=45.0,
+                diff=-5.0,
+                interpretations=(
+                    EvidenceItem(
+                        statement="Points decreased",
+                        label="data",
+                        source="simulation_output",
+                    ),
+                ),
+            ),
+        ),
+        causal_chain=(),
+        player_impacts=(
+            _make_player_impact("Player A", form_diff=-0.15, trust_diff=-0.08, impact_score=0.4),
+            _make_player_impact("Player B", form_diff=0.03, trust_diff=0.12, impact_score=0.35),
+            _make_player_impact("Player C", form_diff=-0.13, trust_diff=-0.04, impact_score=0.3),
+        ),
+        limitations=LimitationsDisclosure(system=SYSTEM_LIMITATIONS, scenario=()),
+    )
+
+
 def _make_explanation() -> StructuredExplanation:
     return StructuredExplanation(
         scenario=ScenarioDescriptor(
@@ -262,6 +352,94 @@ class TestStructuredToReportInput:
         assert ri.display_hints is not None
         assert ri.display_hints.expanded_step_ids == plan.expanded_step_ids
         assert ri.display_hints.collapsed_step_ids == plan.collapsed_step_ids
+
+    # ------------------------------------------------------------------
+    # Shared reset detection and axis filtering tests
+    # ------------------------------------------------------------------
+
+    def test_shared_reset_detected_in_meta(self) -> None:
+        exp = _make_multi_player_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.player_impact_meta is not None
+        assert "understanding" in ri.player_impact_meta.shared_resets
+        assert ri.player_impact_meta.shared_resets["understanding"] == -0.25
+
+    def test_shared_reset_removed_from_individual_changes(self) -> None:
+        exp = _make_multi_player_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.player_impact_details is not None
+        for player in ri.player_impact_details:
+            axes = [c.axis for c in player.changes]
+            assert "understanding" not in axes, (
+                f"{player.player_name} still has understanding in changes"
+            )
+
+    def test_max_two_axes_per_player(self) -> None:
+        exp = _make_multi_player_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.player_impact_details is not None
+        for player in ri.player_impact_details:
+            assert len(player.changes) <= 2, (
+                f"{player.player_name} has {len(player.changes)} axes, expected <= 2"
+            )
+
+    def test_axes_sorted_by_absolute_diff(self) -> None:
+        exp = _make_multi_player_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.player_impact_details is not None
+        for player in ri.player_impact_details:
+            if len(player.changes) >= 2:
+                assert abs(player.changes[0].diff) >= abs(player.changes[1].diff)
+
+    def test_no_shared_reset_when_values_differ(self) -> None:
+        """When understanding_diff differs across players, it is not shared."""
+        exp = StructuredExplanation(
+            scenario=ScenarioDescriptor(
+                trigger_type="manager_change",
+                team_name="Arsenal",
+                detail={"outgoing_manager": "A", "incoming_manager": "B"},
+            ),
+            highlights=(),
+            causal_chain=(),
+            player_impacts=(
+                _make_player_impact("Player A", understanding_diff=-0.25),
+                _make_player_impact("Player B", understanding_diff=-0.10),
+            ),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
+        )
+        ri = structured_to_report_input(exp, n_runs=10)
+
+        # understanding differs across players, so it should NOT be shared.
+        if ri.player_impact_meta is not None:
+            assert "understanding" not in ri.player_impact_meta.shared_resets
+        # understanding should remain in individual changes.
+        assert ri.player_impact_details is not None
+        for player in ri.player_impact_details:
+            axes = [c.axis for c in player.changes]
+            assert "understanding" in axes
+
+    def test_no_meta_when_no_players(self) -> None:
+        exp = StructuredExplanation(
+            scenario=ScenarioDescriptor(
+                trigger_type="manager_change",
+                team_name="Arsenal",
+                detail={"outgoing_manager": "A", "incoming_manager": "B"},
+            ),
+            highlights=(),
+            causal_chain=(),
+            player_impacts=(),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
+        )
+        ri = structured_to_report_input(exp, n_runs=5)
+        assert ri.player_impact_meta is None
 
     def test_empty_explanation(self) -> None:
         exp = StructuredExplanation(

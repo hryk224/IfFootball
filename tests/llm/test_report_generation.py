@@ -5,13 +5,27 @@ from __future__ import annotations
 import json
 
 from iffootball.llm.report_generation import (
+    CausalStepEntry,
     DEFAULT_LIMITATIONS,
+    EvidenceEntry,
+    PlayerImpactMeta,
     REQUIRED_SECTIONS,
     ActionExplanationEntry,
     PlayerImpactEntry,
     ReportInput,
     _build_payload,
+    _build_retry_instruction,
     _FALLBACK_REPORT,
+    _has_expected_hypothesis_labels,
+    _has_no_internal_metadata_leak,
+    _has_no_shared_reset_repetition,
+    _has_consistent_summary_directions,
+    _has_no_multi_claim_sentences,
+    _has_sentence_level_labels,
+    _has_valid_key_differences_format,
+    _normalize_signed_deltas_en,
+    _normalize_signed_deltas_ja,
+    _section_label_detail,
     generate_report,
 )
 
@@ -336,3 +350,786 @@ class TestPlayerImpactEntry:
         )
         assert entry.form_diff == -0.1
         assert entry.understanding_diff == -0.2
+
+
+# ---------------------------------------------------------------------------
+# Sign/direction normalization tests
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeSignedDeltasEn:
+    def test_decreased_by_negative_removes_sign(self) -> None:
+        assert _normalize_signed_deltas_en("decreased by -35.3") == "decreased by 35.3"
+
+    def test_increased_by_negative_flips_direction(self) -> None:
+        assert _normalize_signed_deltas_en("increased by -24.0") == "decreased by 24.0"
+
+    def test_dropped_by_negative_removes_sign(self) -> None:
+        assert _normalize_signed_deltas_en("dropped by -2.5") == "dropped by 2.5"
+
+    def test_normal_decreased_untouched(self) -> None:
+        assert _normalize_signed_deltas_en("decreased by 35.3") == "decreased by 35.3"
+
+    def test_normal_increased_untouched(self) -> None:
+        assert _normalize_signed_deltas_en("increased by 24.0") == "increased by 24.0"
+
+    def test_changed_by_negative_keeps_changed(self) -> None:
+        assert _normalize_signed_deltas_en("changed by -5.0") == "changed by 5.0"
+
+    def test_capitalized_direction(self) -> None:
+        assert _normalize_signed_deltas_en("Increased by -3.0") == "Decreased by 3.0"
+
+    def test_multiple_occurrences(self) -> None:
+        text = "Form decreased by -0.11 and trust increased by -0.08."
+        result = _normalize_signed_deltas_en(text)
+        assert "decreased by 0.11" in result
+        assert "decreased by 0.08" in result
+
+    def test_no_match_returns_unchanged(self) -> None:
+        text = "The score is 3.5 points."
+        assert _normalize_signed_deltas_en(text) == text
+
+
+class TestNormalizeSignedDeltasJa:
+    def test_negative_decrease_removes_sign(self) -> None:
+        assert _normalize_signed_deltas_ja("-35.3 減少") == "35.3 減少"
+
+    def test_negative_increase_flips_direction(self) -> None:
+        assert _normalize_signed_deltas_ja("-24.0 増加") == "24.0 減少"
+
+    def test_negative_no_space(self) -> None:
+        assert _normalize_signed_deltas_ja("-35.3減少") == "35.3 減少"
+
+    def test_negative_drop_removes_sign(self) -> None:
+        assert _normalize_signed_deltas_ja("-2.5 低下") == "2.5 低下"
+
+    def test_negative_rise_flips_direction(self) -> None:
+        assert _normalize_signed_deltas_ja("-3.0 上昇") == "3.0 低下"
+
+    def test_normal_decrease_untouched(self) -> None:
+        assert _normalize_signed_deltas_ja("35.3 減少") == "35.3 減少"
+
+    def test_normal_increase_untouched(self) -> None:
+        assert _normalize_signed_deltas_ja("24.0 増加") == "24.0 増加"
+
+    def test_change_keeps_change(self) -> None:
+        assert _normalize_signed_deltas_ja("-5.0 変化") == "5.0 変化"
+
+    def test_no_match_returns_unchanged(self) -> None:
+        text = "スコアは3.5ポイントです。"
+        assert _normalize_signed_deltas_ja(text) == text
+
+
+# ---------------------------------------------------------------------------
+# Validator tests
+# ---------------------------------------------------------------------------
+
+
+class TestSentenceLevelLabels:
+    def test_rejects_paragraph_with_single_label(self) -> None:
+        report = (
+            "## Summary\n\n"
+            "The manager change had a positive impact. "
+            "Points increased by 2.1. "
+            "The team adapted quickly. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "The change led to adaptation. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Player A was most affected. [data]\n\n"
+            "## Limitations\n\n"
+            "- Known constraint."
+        )
+        # Summary has 3 sentences but only 1 label.
+        assert _has_sentence_level_labels(report, "en") is False
+
+    def test_accepts_well_labelled_report(self) -> None:
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data] "
+            "The team adapted quickly. [analysis]\n\n"
+            "## Key Differences\n\n"
+            "- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "The change led to adaptation. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Player A form dropped by 0.15. [data]\n\n"
+            "## Limitations\n\n"
+            "- Known constraint."
+        )
+        assert _has_sentence_level_labels(report, "en") is True
+
+    def test_accepts_ja_labelled_report(self) -> None:
+        report = (
+            "## サマリー\n\n"
+            "勝ち点が2.1増加した。[データ]\n\n"
+            "## 主な差分\n\n"
+            "- 勝ち点が2.1増加した [データ]\n\n"
+            "## 因果連鎖\n\n"
+            "監督交代が戦術リセットを引き起こした。[分析]\n\n"
+            "## 選手への影響\n\n"
+            "Player Aのフォームが低下した。[データ]\n\n"
+            "## 制約事項\n\n"
+            "- 既知の制約。"
+        )
+        assert _has_sentence_level_labels(report, "ja") is True
+
+
+class TestInternalMetadataLeak:
+    def test_rejects_field_names_in_text(self) -> None:
+        report = (
+            "## Summary\n\n"
+            "Since causal_steps is not provided, we use action_explanations. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points diff [data]\n\n"
+            "## Causal Chain\n\n"
+            "No data. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "No impact. [data]\n\n"
+            "## Limitations\n\n"
+            "- None."
+        )
+        assert _has_no_internal_metadata_leak(report) is False
+
+    def test_accepts_clean_text(self) -> None:
+        assert _has_no_internal_metadata_leak(_SAMPLE_REPORT) is True
+
+    def test_rejects_display_hints_mention(self) -> None:
+        report = "The display_hints indicate compact mode. [data]"
+        assert _has_no_internal_metadata_leak(report) is False
+
+
+class TestKeyDifferencesFormat:
+    def test_rejects_key_value_style(self) -> None:
+        report = (
+            "## Key Differences\n\n"
+            "- metric_name: total_points_mean, diff: 2.1, unit: points_mean, "
+            "direction: increased, label: data\n\n"
+            "## Summary\n\nOK. [data]"
+        )
+        assert _has_valid_key_differences_format(report, "en") is False
+
+    def test_accepts_natural_format(self) -> None:
+        report = (
+            "## Key Differences\n\n"
+            "- Mean points increased by 2.1 points [data]\n"
+            "- Adaptation progress increased by 24.0 events per run [data]\n\n"
+            "## Summary\n\nOK. [data]"
+        )
+        assert _has_valid_key_differences_format(report, "en") is True
+
+    def test_ja_rejects_unreadable_number_sequence(self) -> None:
+        report = (
+            "## 主な差分\n\n"
+            "- 14.3 増加 2.1 24.0\n\n"
+            "## サマリー\n\nOK。[データ]"
+        )
+        assert _has_valid_key_differences_format(report, "ja") is False
+
+    def test_ja_accepts_with_context_words(self) -> None:
+        report = (
+            "## 主な差分\n\n"
+            "- 平均勝ち点が14.3ポイントから12.2ポイントに2.1ポイント増加した [データ]\n\n"
+            "## サマリー\n\nOK。[データ]"
+        )
+        assert _has_valid_key_differences_format(report, "ja") is True
+
+
+class TestSharedResetRepetition:
+    def test_rejects_per_player_repetition(self) -> None:
+        meta = PlayerImpactMeta(shared_resets={"understanding": -0.25})
+        ri = ReportInput(
+            trigger_description="test",
+            points_mean_a=10.0,
+            points_mean_b=12.0,
+            points_mean_diff=2.0,
+            cascade_count_diff={},
+            n_runs=10,
+            player_impacts=[
+                PlayerImpactEntry("A", 0.3, -0.1, 0.0, -0.25, -0.05),
+                PlayerImpactEntry("B", 0.2, 0.05, 0.0, -0.25, 0.1),
+            ],
+            action_explanations=[],
+            limitations=[],
+            player_impact_meta=meta,
+        )
+        report = (
+            "## Player Impact\n\n"
+            "All players experienced a tactical understanding reset of -0.25.\n\n"
+            "**A** — form dropped by 0.1. [data] "
+            "Understanding decreased by 0.25. [data]\n\n"
+            "**B** — trust increased by 0.1. [data] "
+            "Understanding decreased by 0.25. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_shared_reset_repetition(report, ri, "en") is False
+
+    def test_accepts_single_mention(self) -> None:
+        meta = PlayerImpactMeta(shared_resets={"understanding": -0.25})
+        ri = ReportInput(
+            trigger_description="test",
+            points_mean_a=10.0,
+            points_mean_b=12.0,
+            points_mean_diff=2.0,
+            cascade_count_diff={},
+            n_runs=10,
+            player_impacts=[
+                PlayerImpactEntry("A", 0.3, -0.1, 0.0, -0.25, -0.05),
+                PlayerImpactEntry("B", 0.2, 0.05, 0.0, -0.25, 0.1),
+            ],
+            action_explanations=[],
+            limitations=[],
+            player_impact_meta=meta,
+        )
+        report = (
+            "## Player Impact\n\n"
+            "All players experienced a tactical understanding reset of -0.25.\n\n"
+            "**A** — form dropped by 0.1. [data]\n\n"
+            "**B** — trust increased by 0.1. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_shared_reset_repetition(report, ri, "en") is True
+
+
+class TestHypothesisLabels:
+    def test_rejects_speculative_wording_without_label(self) -> None:
+        ri = _make_report_input()
+        report = (
+            "## Summary\n\n"
+            "The team may struggle with adaptation. [analysis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nAdaptation. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # "may" is speculative but no [hypothesis] label anywhere.
+        assert _has_expected_hypothesis_labels(report, ri, "en") is False
+
+    def test_accepts_speculative_with_hypothesis_label(self) -> None:
+        ri = _make_report_input()
+        report = (
+            "## Summary\n\n"
+            "The team may struggle with adaptation. [hypothesis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nAdaptation. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_expected_hypothesis_labels(report, ri, "en") is True
+
+    def test_rejects_missing_hypothesis_from_causal_steps(self) -> None:
+        ri = ReportInput(
+            trigger_description="test",
+            points_mean_a=10.0,
+            points_mean_b=12.0,
+            points_mean_diff=2.0,
+            cascade_count_diff={},
+            n_runs=10,
+            player_impacts=[],
+            action_explanations=[],
+            limitations=[],
+            causal_steps=[
+                CausalStepEntry(
+                    step_id="cs-001",
+                    cause="test",
+                    effect="test",
+                    affected_agent="A",
+                    event_type="form_drop",
+                    depth=3,
+                    paragraph_label="hypothesis",
+                    evidence_labels=("hypothesis",),
+                    evidence=(
+                        EvidenceEntry(
+                            statement="test",
+                            label="hypothesis",
+                            source="rule_based_model",
+                        ),
+                    ),
+                ),
+            ],
+        )
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nAdaptation happened. [analysis]\n\n"
+            "## Player Impact\n\nNo impact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # causal_steps has hypothesis but report only has [analysis].
+        assert _has_expected_hypothesis_labels(report, ri, "en") is False
+
+
+class TestGenerateReportRetry:
+    def test_retries_once_on_validation_failure(self) -> None:
+        """First response has metadata leak, second is clean."""
+        call_count = 0
+        bad_report = (
+            "## Summary\n\n"
+            "Since causal_steps is not provided, points decreased. [data]\n\n"
+            "## Key Differences\n\n- Points: -1.2 [data]\n\n"
+            "## Causal Chain\n\nAdaptation. [analysis]\n\n"
+            "## Player Impact\n\nPlayer 7 form dropped. [data]\n\n"
+            "## Limitations\n\n- Poisson model."
+        )
+        good_report = _SAMPLE_REPORT
+
+        class RetryClient:
+            def complete(self, messages: list[dict[str, str]]) -> str:
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    return bad_report
+                return good_report
+
+        ri = _make_report_input()
+        result = generate_report(
+            RetryClient(),  # type: ignore[arg-type]
+            ri,
+            system_prompt=_FAKE_PROMPT,
+            lang="en",
+        )
+        assert call_count == 2
+        # Should use the retry result (good_report).
+        assert "causal_steps" not in result
+
+    def test_falls_back_after_retry_failure(self) -> None:
+        """Both responses have metadata leak — falls back."""
+        bad_report = (
+            "## Summary\n\n"
+            "The display_hints show something. [data]\n\n"
+            "## Key Differences\n\n- Points: -1.2 [data]\n\n"
+            "## Causal Chain\n\nChain. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+
+        class AlwaysBadClient:
+            def complete(self, messages: list[dict[str, str]]) -> str:
+                return bad_report
+
+        ri = _make_report_input()
+        result = generate_report(
+            AlwaysBadClient(),  # type: ignore[arg-type]
+            ri,
+            system_prompt=_FAKE_PROMPT,
+            lang="en",
+        )
+        # Validator failed twice — must fall back, never return invalid report.
+        assert "display_hints" not in result
+        assert "Unable to generate" in result or "No data available" in result
+
+
+# ---------------------------------------------------------------------------
+# Player Impact sentence-level label tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlayerImpactLabels:
+    def test_split_sentences_pass(self) -> None:
+        """Two separate sentences with labels each — should pass."""
+        report = (
+            "## Summary\n\n"
+            "Points changed. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points: +2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "Cause led to effect. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Juan Mata's form decreased by 0.11. [data] "
+            "This suggests reduced suitability. [analysis]\n\n"
+            "## Limitations\n\n"
+            "- None."
+        )
+        assert _has_sentence_level_labels(report, "en") is True
+
+    def test_combined_sentence_detected_by_multi_claim_validator(self) -> None:
+        """Two claims joined by 'while'/'indicating' — detected by multi-claim check."""
+        report = (
+            "## Summary\n\n"
+            "Points changed. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points: +2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "Cause led to effect. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Juan Mata's form decreased by 0.11 while trust also dropped by 0.08. [data]\n\n"
+            "Ander Herrera's trust increased, indicating adaptation. [data]\n\n"
+            "## Limitations\n\n"
+            "- None."
+        )
+        # Sentence-level labels pass (each sentence has 1 label).
+        assert _has_sentence_level_labels(report, "en") is True
+        # But multi-claim validator catches the combining words.
+        assert _has_no_multi_claim_sentences(report, "en") is False
+
+    def test_multi_sentence_one_label_fails(self) -> None:
+        """Paragraph with multiple sentences but only final label — should fail."""
+        report = (
+            "## Summary\n\n"
+            "Points changed. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points: +2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "Cause led to effect. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Juan Mata's form decreased by 0.11. "
+            "His trust also dropped by 0.08. "
+            "This suggests he struggled with the new system. [analysis]\n\n"
+            "## Limitations\n\n"
+            "- None."
+        )
+        assert _has_sentence_level_labels(report, "en") is False
+
+    def test_section_detail_identifies_player_impact(self) -> None:
+        """section_label_detail should identify player_impact as problematic."""
+        report = (
+            "## Summary\n\n"
+            "Points changed. [data]\n\n"
+            "## Key Differences\n\n"
+            "- Points: +2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "Cause led to effect. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Juan Mata's form decreased by 0.11. "
+            "His trust also dropped. [data]\n\n"
+            "## Limitations\n\n"
+            "- None."
+        )
+        detail = _section_label_detail(report, "en")
+        assert detail["player_impact"]["unlabelled"] > 0
+        assert detail["summary"]["unlabelled"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Section-specific retry instruction tests
+# ---------------------------------------------------------------------------
+
+
+class TestRetryInstruction:
+    def test_en_includes_player_impact_section(self) -> None:
+        issues = ["missing sentence-level labels"]
+        section_detail = {
+            "summary": {"labelled": 2, "unlabelled": 0},
+            "player_impact": {"labelled": 1, "unlabelled": 2},
+        }
+        instruction = _build_retry_instruction(issues, section_detail, "en")
+        assert "Player Impact" in instruction
+        assert "Summary" not in instruction  # summary has no unlabelled
+
+    def test_ja_includes_player_impact_section(self) -> None:
+        issues = ["missing sentence-level labels"]
+        section_detail = {
+            "player_impact": {"labelled": 1, "unlabelled": 1},
+        }
+        instruction = _build_retry_instruction(issues, section_detail, "ja")
+        assert "選手への影響" in instruction
+
+    def test_no_section_detail_when_no_label_issue(self) -> None:
+        issues = ["internal metadata leaked"]
+        section_detail = {
+            "player_impact": {"labelled": 1, "unlabelled": 2},
+        }
+        instruction = _build_retry_instruction(issues, section_detail, "en")
+        assert "Player Impact" not in instruction
+
+    def test_multiple_sections_with_issues(self) -> None:
+        issues = ["missing sentence-level labels"]
+        section_detail = {
+            "summary": {"labelled": 1, "unlabelled": 1},
+            "player_impact": {"labelled": 1, "unlabelled": 1},
+        }
+        instruction = _build_retry_instruction(issues, section_detail, "en")
+        assert "Summary" in instruction
+        assert "Player Impact" in instruction
+
+    def test_multi_claim_retry_includes_split_guidance(self) -> None:
+        issues = ["multi-claim sentences in player impact"]
+        instruction = _build_retry_instruction(issues, {}, "en")
+        assert "while" in instruction
+        assert "separate" in instruction.lower()
+
+    def test_multi_claim_retry_ja(self) -> None:
+        issues = ["multi-claim sentences in player impact"]
+        instruction = _build_retry_instruction(issues, {}, "ja")
+        assert "選手への影響" in instruction
+
+
+# ---------------------------------------------------------------------------
+# Multi-claim sentence validator tests
+# ---------------------------------------------------------------------------
+
+
+class TestMultiClaimSentences:
+    def test_rejects_while_pattern(self) -> None:
+        report = (
+            "## Player Impact\n\n"
+            "Form decreased by 0.11 while trust also dropped. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_multi_claim_sentences(report, "en") is False
+
+    def test_rejects_indicating_pattern(self) -> None:
+        report = (
+            "## Player Impact\n\n"
+            "Trust increased, indicating adaptation to the new system. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_multi_claim_sentences(report, "en") is False
+
+    def test_rejects_suggesting_pattern(self) -> None:
+        report = (
+            "## Player Impact\n\n"
+            "Form dropped significantly, suggesting poor fit. [analysis]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_multi_claim_sentences(report, "en") is False
+
+    def test_accepts_clean_sentences(self) -> None:
+        report = (
+            "## Player Impact\n\n"
+            "Form decreased by 0.11. [data] "
+            "This may indicate poor adaptation. [hypothesis]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_no_multi_claim_sentences(report, "en") is True
+
+    def test_ja_rejects_combining_pattern(self) -> None:
+        report = (
+            "## 選手への影響\n\n"
+            "フォームが低下し、信頼度も低下した。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        # "〜し、" is a combining pattern.
+        assert _has_no_multi_claim_sentences(report, "ja") is False
+
+    def test_ja_accepts_clean_sentences(self) -> None:
+        report = (
+            "## 選手への影響\n\n"
+            "フォームが0.11低下した。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        assert _has_no_multi_claim_sentences(report, "ja") is True
+
+    def test_no_player_impact_section_passes(self) -> None:
+        report = "## Summary\n\nOK. [data]"
+        assert _has_no_multi_claim_sentences(report, "en") is True
+
+    def test_is_valid_report_catches_multi_claim(self) -> None:
+        """_is_valid_report integrates multi-claim check."""
+        from iffootball.llm.report_generation import _is_valid_report
+
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points: +2.1 [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\n"
+            "Form dropped while trust declined. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        ri = _make_report_input()
+        valid, issues = _is_valid_report(report, ri, "en")
+        assert not valid
+        assert "multi-claim sentences in player impact" in issues
+
+
+# ---------------------------------------------------------------------------
+# Summary direction consistency tests
+# ---------------------------------------------------------------------------
+
+
+def _make_report_input_with_highlights() -> ReportInput:
+    """ReportInput with highlights that have direction info."""
+    from iffootball.llm.report_generation import HighlightEntry
+
+    return ReportInput(
+        trigger_description="Manager change at week 29",
+        points_mean_a=12.2,
+        points_mean_b=14.3,
+        points_mean_diff=2.1,
+        cascade_count_diff={
+            "adaptation_progress": 24.0,
+            "tactical_confusion": -35.3,
+            "form_drop": 8.4,
+        },
+        n_runs=20,
+        player_impacts=[],
+        action_explanations=[],
+        limitations=[],
+        highlights=[
+            HighlightEntry(
+                metric_name="total_points_mean",
+                diff=2.1,
+                label="data",
+                statement="Points increased by 2.1.",
+                unit="points_mean",
+                direction="increased",
+            ),
+            HighlightEntry(
+                metric_name="adaptation_progress",
+                diff=24.0,
+                label="data",
+                statement="Adaptation progress increased by 24.0.",
+                unit="events_per_run",
+                direction="increased",
+            ),
+            HighlightEntry(
+                metric_name="tactical_confusion",
+                diff=35.3,
+                label="data",
+                statement="Tactical confusion decreased by 35.3.",
+                unit="events_per_run",
+                direction="decreased",
+            ),
+            HighlightEntry(
+                metric_name="form_drop",
+                diff=8.4,
+                label="data",
+                statement="Form drop increased by 8.4.",
+                unit="events_per_run",
+                direction="increased",
+            ),
+        ],
+    )
+
+
+class TestSummaryDirectionConsistency:
+    def test_rejects_reversed_direction(self) -> None:
+        """tactical_confusion direction is 'decreased' but summary says 'increased'."""
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data] "
+            "Tactical confusion increased significantly. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_consistent_summary_directions(report, ri, "en") is False
+
+    def test_accepts_correct_direction(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data] "
+            "Tactical confusion decreased by 35.3. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_consistent_summary_directions(report, ri, "en") is True
+
+    def test_accepts_unmentioned_events(self) -> None:
+        """Events not mentioned in summary are OK."""
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_consistent_summary_directions(report, ri, "en") is True
+
+    def test_no_highlights_passes(self) -> None:
+        """No highlights in input — validator passes."""
+        ri = _make_report_input()
+        report = "## Summary\n\nPoints changed. [data]\n\n## Limitations\n\n- None."
+        assert _has_consistent_summary_directions(report, ri, "en") is True
+
+    def test_ja_rejects_reversed_direction(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## サマリー\n\n"
+            "勝ち点が2.1増加した。[データ] "
+            "戦術的混乱が増加した。[データ]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n原因。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        # tactical_confusion direction is "decreased" but summary says 増加.
+        assert _has_consistent_summary_directions(report, ri, "ja") is False
+
+    def test_ja_accepts_correct_direction(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## サマリー\n\n"
+            "勝ち点が2.1増加した。[データ] "
+            "戦術的混乱が35.3減少した。[データ]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n原因。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        assert _has_consistent_summary_directions(report, ri, "ja") is True
+
+    def test_is_valid_report_catches_direction_mismatch(self) -> None:
+        from iffootball.llm.report_generation import _is_valid_report
+
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased. [data] "
+            "Tactical confusion increased sharply. [data]\n\n"
+            "## Key Differences\n\n- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\nCause led to effect. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        valid, issues = _is_valid_report(report, ri, "en")
+        assert not valid
+        assert "summary direction contradicts input data" in issues
+
+    def test_rejects_second_mention_with_wrong_direction(self) -> None:
+        """Event correct first time but reversed second time."""
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Tactical confusion decreased initially. [data] "
+            "However tactical confusion increased later. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_consistent_summary_directions(report, ri, "en") is False
+
+    def test_rejects_direction_word_before_event_name(self) -> None:
+        """'Increased tactical confusion' — direction word before event."""
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data] "
+            "Increased tactical confusion disrupted the team. [analysis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # tactical_confusion direction is "decreased" but "increased" appears
+        # before the event name in the same sentence.
+        assert _has_consistent_summary_directions(report, ri, "en") is False
+
+    def test_ja_rejects_direction_before_event(self) -> None:
+        """'増加した戦術的混乱' — direction before event in JA."""
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## サマリー\n\n"
+            "勝ち点が2.1増加した。[データ] "
+            "増加した戦術的混乱がチームを混乱させた。[分析]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n原因。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        assert _has_consistent_summary_directions(report, ri, "ja") is False
+
+    def test_retry_instruction_includes_direction_fix(self) -> None:
+        issues = ["summary direction contradicts input data"]
+        instruction = _build_retry_instruction(issues, {}, "en")
+        assert "direction" in instruction.lower()
+        assert "Summary" in instruction
