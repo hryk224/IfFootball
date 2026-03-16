@@ -170,10 +170,10 @@ _PRESETS: list[dict[str, Any]] = [
         "trigger_week": 29,
     },
     {
-        "label": "Man United: Van Gaal → Pochettino",
+        "label": "Man United: Van Gaal → Klopp",
         "team_name": "Manchester United",
         "manager_name": "Louis van Gaal",
-        "incoming_manager_name": "Mauricio Roberto Pochettino Trossero",
+        "incoming_manager_name": "Jürgen Klopp",
         "trigger_week": 29,
     },
     {

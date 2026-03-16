@@ -63,10 +63,10 @@ _INCOMING_PROFILE_SOURCES: list[dict[str, object]] = [
     # Mourinho's profile from Chelsea (for ManUtd: Van Gaal → Mourinho).
     # Already covered by Chelsea scenario cache above.
 
-    # Pochettino's profile from Spurs (for ManUtd: Van Gaal → Pochettino).
+    # Klopp's profile from Liverpool (for ManUtd: Van Gaal → Klopp).
     {
-        "team_name": "Tottenham Hotspur",
-        "manager_name": "Mauricio Roberto Pochettino Trossero",
+        "team_name": "Liverpool",
+        "manager_name": "Jürgen Klopp",
         "trigger_week": 29,
     },
     # Hiddink's profile from Chelsea (for Chelsea: Mourinho → Hiddink).

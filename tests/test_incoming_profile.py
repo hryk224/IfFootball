@@ -41,16 +41,16 @@ class TestResolveIncomingProfile:
         assert profile.pressing_intensity != 50.0
         assert profile.team_name == "Chelsea"
 
-    def test_pochettino_from_cache(self) -> None:
-        """Pochettino resolves from Spurs demo cache."""
+    def test_klopp_from_cache(self) -> None:
+        """Klopp resolves from Liverpool demo cache."""
         if not _HAS_CACHE:
             return
         profile = resolve_incoming_profile(
-            "Mauricio Roberto Pochettino Trossero", 2, 27,
+            "Jürgen Klopp", 2, 27,
             cache_dir=_CACHE_DIR,
         )
         assert profile.pressing_intensity != 50.0
-        assert profile.team_name == "Tottenham Hotspur"
+        assert profile.team_name == "Liverpool"
 
     def test_hiddink_from_cache(self) -> None:
         """Hiddink resolves from Chelsea (w25) demo cache."""
@@ -71,8 +71,8 @@ class TestResolveIncomingProfile:
             "José Mario Felix dos Santos Mourinho", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        pochettino = resolve_incoming_profile(
-            "Mauricio Roberto Pochettino Trossero", 2, 27,
+        klopp = resolve_incoming_profile(
+            "Jürgen Klopp", 2, 27,
             cache_dir=_CACHE_DIR,
         )
         hiddink = resolve_incoming_profile(
@@ -81,7 +81,7 @@ class TestResolveIncomingProfile:
         )
         values = {
             mourinho.pressing_intensity,
-            pochettino.pressing_intensity,
+            klopp.pressing_intensity,
             hiddink.pressing_intensity,
         }
         assert len(values) == 3
@@ -114,11 +114,11 @@ class TestResolveIncomingProfile:
         )
         assert mourinho.team_name == "Chelsea"
 
-        pochettino = resolve_incoming_profile(
-            "Mauricio Roberto Pochettino Trossero", 2, 27,
+        klopp = resolve_incoming_profile(
+            "Jürgen Klopp", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        assert pochettino.team_name == "Tottenham Hotspur"
+        assert klopp.team_name == "Liverpool"
 
         hiddink = resolve_incoming_profile(
             "Guus Hiddink", 2, 27,
@@ -127,5 +127,5 @@ class TestResolveIncomingProfile:
         assert hiddink.team_name == "Chelsea"
 
         # None should be neutral.
-        for p in [mourinho, pochettino, hiddink]:
+        for p in [mourinho, klopp, hiddink]:
             assert p.pressing_intensity != 50.0
