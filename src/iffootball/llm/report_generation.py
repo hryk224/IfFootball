@@ -744,16 +744,62 @@ def _normalize_signed_deltas_en(report: str) -> str:
 
 
 
+def _strip_excluded_sections(
+    report: str,
+    section_order: tuple[str, ...] | None,
+) -> str:
+    """Remove sections from the report that are not in section_order.
+
+    When section_order is provided (from DisplayHints), any LLM-generated
+    section heading not in the order is stripped along with its content.
+    This handles cases where the LLM outputs sections that the planner
+    excluded (e.g. Causal Chain in compact mode).
+    """
+    if section_order is None:
+        return report  # No filtering — all default sections allowed.
+
+    allowed_headings = {
+        _SECTION_HEADINGS[s]
+        for s in section_order
+        if s in _SECTION_HEADINGS
+    }
+
+    lines = report.split("\n")
+    output: list[str] = []
+    skip = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ") and stripped in _SECTION_HEADINGS.values():
+            if stripped in allowed_headings:
+                skip = False
+                output.append(line)
+            else:
+                skip = True  # Start skipping this excluded section.
+        elif skip:
+            # Check if we've reached the next section heading.
+            if stripped.startswith("## ") and stripped in _SECTION_HEADINGS.values():
+                if stripped in allowed_headings:
+                    skip = False
+                    output.append(line)
+            # Otherwise continue skipping.
+        else:
+            output.append(line)
+
+    return "\n".join(output)
+
+
 def _append_code_sections(
     report: str,
     report_input: ReportInput,
     section_order: tuple[str, ...] | None,
 ) -> str:
-    """Append code-generated sections to the LLM report.
+    """Strip excluded sections, then append code-generated sections.
 
-    Currently handles:
-    - What to Watch (validation signals) — rendered from code, not LLM.
+    1. Remove LLM sections not in section_order.
+    2. Append code-generated sections (e.g. What to Watch).
     """
+    report = _strip_excluded_sections(report, section_order)
     order = section_order or _DEFAULT_SECTION_ORDER
     if "what_to_watch" in order and report_input.validation_signals_md:
         report = report.rstrip() + "\n\n" + report_input.validation_signals_md
@@ -1301,11 +1347,18 @@ def _count_summary_sentences(report: str) -> int:
 
 
 def _has_valid_summary_length(report: str, report_input: ReportInput) -> bool:
-    """Check that Summary does not exceed max_sentences."""
+    """Check Summary sentence count.
+
+    For compact mode (max_sentences <= 2): requires exactly max_sentences.
+    For standard/analyst (max_sentences > 2): requires at most max_sentences.
+    """
     max_sentences = 4  # default
     if report_input.display_hints is not None:
         max_sentences = report_input.display_hints.summary_max_sentences
     count = _count_summary_sentences(report)
+    if max_sentences <= 2:
+        # Compact: exactly max_sentences (Trigger + Outcome).
+        return count == max_sentences
     return count <= max_sentences
 
 
@@ -1320,6 +1373,9 @@ def _has_correct_summary_tradeoff(
     in the Summary, which would indicate the LLM swapped the trade-off.
     """
     if report_input.display_hints is None:
+        return True
+    # Compact mode: no trade-off sentence expected.
+    if report_input.display_hints.summary_max_sentences <= 2:
         return True
     tradeoff = report_input.display_hints.summary_tradeoff_metric
     if tradeoff is None:
@@ -1372,6 +1428,12 @@ def _has_no_summary_highlights_overuse(
     If 3 or more are mentioned, the Summary is acting as a metrics list.
     """
     if not report_input.highlights:
+        return True
+    # Compact mode: only 2 sentences, no room for highlights listing.
+    if (
+        report_input.display_hints is not None
+        and report_input.display_hints.summary_max_sentences <= 2
+    ):
         return True
 
     summary_text = _extract_summary_text(report).lower()
@@ -1601,7 +1663,14 @@ def _build_retry_instruction(
         max_s = 4  # default
         if report_input is not None and report_input.display_hints is not None:
             max_s = report_input.display_hints.summary_max_sentences
-        base += f" Reduce Summary to at most {max_s} sentences."
+        if max_s <= 2:
+            base += (
+                f" Reduce Summary to exactly {max_s} sentences: "
+                "trigger and outcome only. "
+                "Do not include trade-off or takeaway."
+            )
+        else:
+            base += f" Reduce Summary to at most {max_s} sentences."
 
     if "summary lists too many highlights" in issues:
         base += (

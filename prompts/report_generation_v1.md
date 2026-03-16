@@ -45,6 +45,7 @@ Write a short paragraph that answers "what happened and what does it mean?" — 
 Rules:
 
 - Maximum sentences: `display_hints.summary_max_sentences` (default 4).
+- **If `summary_max_sentences` is 2**: write only Trigger + Outcome. Do not include Trade-off or Takeaway.
 - Do NOT list `highlights` entries here — that is the job of Key Differences.
 - At most 2 numeric values in the entire Summary (points diff + one trade-off metric).
 - When mentioning event changes, use the `direction` from `highlights` — do not guess or reverse.
@@ -57,6 +58,13 @@ Manchester United dismissed Van Gaal and appointed Mourinho at week 29. [data]
 Mean total points increased by 2.1 over 20 simulation runs. [data]
 Form drop events increased by 8.4 per run. [data]
 Overall, the change shows a net positive outcome with transition trade-offs. [analysis]
+```
+
+Example (compact, 2 sentences):
+
+```
+Manchester United dismissed Van Gaal and appointed Mourinho at week 29. [data]
+Mean total points increased by 2.1 over 20 simulation runs. [data]
 ```
 
 ---

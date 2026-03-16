@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from enum import Enum
 from pathlib import Path
 
 from iffootball.llm.providers import create_client
@@ -51,6 +52,15 @@ from iffootball.simulation.structured_explanation import (
 )
 
 _DEFAULT_OUTPUT_DIR = Path(__file__).parents[1] / "output" / "report_preview"
+
+
+class _EnumEncoder(json.JSONEncoder):
+    """JSON encoder that converts Enum values to their string representation."""
+
+    def default(self, o: object) -> object:
+        if isinstance(o, Enum):
+            return o.value
+        return super().default(o)
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +523,7 @@ def _plan_to_dict(plan: object) -> dict:
     lp = raw.get("limitation_placement", {})
     summary = {
         "section_order": [
-            s["section_type"]
+            s["section_type"].value if hasattr(s["section_type"], "value") else s["section_type"]
             for s in raw.get("sections", [])
             if s.get("include")
         ],
@@ -521,6 +531,7 @@ def _plan_to_dict(plan: object) -> dict:
         "expanded_step_ids": raw.get("expanded_step_ids", []),
         "collapsed_step_ids": raw.get("collapsed_step_ids", []),
         "show_limitations_info": lp.get("include_info", False),
+        "validation_signals_count": len(raw.get("validation_signals", [])),
     }
 
     return {"_summary": summary, **raw}
@@ -591,6 +602,9 @@ def main() -> None:
                 print(f"        initial issues: {debug.initial_issues}")
             if debug.retry_issues:
                 print(f"        retry issues:   {debug.retry_issues}")
+            has_signals = bool(report_input.validation_signals_md)
+            if has_signals:
+                print("        validation signals: attached")
 
             # Save payload.
             if args.save_payload:
@@ -606,7 +620,7 @@ def main() -> None:
             if plan is not None:
                 plan_path = output_dir / f"plan_{lang}{ctx_label}{suffix}.json"
                 plan_path.write_text(
-                    json.dumps(_plan_to_dict(plan), ensure_ascii=False, indent=2),
+                    json.dumps(_plan_to_dict(plan), ensure_ascii=False, indent=2, cls=_EnumEncoder),
                     encoding="utf-8",
                 )
                 print(f"[{lang}] plan -> {plan_path}")
