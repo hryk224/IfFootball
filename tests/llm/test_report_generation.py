@@ -19,6 +19,8 @@ from iffootball.llm.report_generation import (
     _has_expected_hypothesis_labels,
     _has_no_internal_metadata_leak,
     _has_no_shared_reset_repetition,
+    _has_causal_chain_coverage,
+    _has_causal_chain_paragraph_format,
     _has_consistent_summary_directions,
     _has_no_multi_claim_sentences,
     _has_correct_summary_tradeoff,
@@ -1367,3 +1369,310 @@ class TestSummaryTradeoffMetric:
             issues, {}, "en", report_input=ri,
         )
         assert "form drop" in instruction.lower()
+
+
+# ---------------------------------------------------------------------------
+# Causal Chain coverage tests
+# ---------------------------------------------------------------------------
+
+
+def _make_report_input_with_causal_steps() -> ReportInput:
+    """ReportInput with causal_steps for coverage testing."""
+    from iffootball.llm.report_generation import CausalStepEntry, EvidenceEntry
+    from iffootball.simulation.report_planner import DisplayHints
+
+    return ReportInput(
+        trigger_description="Manager change at week 29",
+        points_mean_a=12.2,
+        points_mean_b=14.3,
+        points_mean_diff=2.1,
+        cascade_count_diff={},
+        n_runs=20,
+        player_impacts=[],
+        action_explanations=[],
+        limitations=[],
+        display_hints=DisplayHints(
+            section_order=(
+                "summary", "key_differences", "causal_chain",
+                "player_impact", "limitations",
+            ),
+            expanded_step_ids=frozenset({"cs-001", "cs-002", "cs-003"}),
+            collapsed_step_ids=frozenset(),
+            featured_players=(),
+            show_limitations_info=False,
+        ),
+        causal_steps=[
+            CausalStepEntry(
+                step_id="cs-001",
+                cause="Manager change triggered reset",
+                effect="Understanding dropped",
+                affected_agent="Juan Mata",
+                event_type="tactical_confusion",
+                depth=1,
+                paragraph_label="analysis",
+                evidence_labels=("data",),
+                evidence=(
+                    EvidenceEntry("Understanding dropped", "data", "simulation_output"),
+                ),
+            ),
+            CausalStepEntry(
+                step_id="cs-002",
+                cause="Confusion caused form drop",
+                effect="Form declined",
+                affected_agent="Juan Mata",
+                event_type="form_drop",
+                depth=2,
+                paragraph_label="analysis",
+                evidence_labels=("data",),
+                evidence=(
+                    EvidenceEntry("Form dropped by 0.11", "data", "simulation_output"),
+                ),
+            ),
+            CausalStepEntry(
+                step_id="cs-003",
+                cause="Trust shifted to pressing players",
+                effect="Trust gained",
+                affected_agent="Ander Herrera",
+                event_type="adaptation_progress",
+                depth=2,
+                paragraph_label="analysis",
+                evidence_labels=("analysis",),
+                evidence=(
+                    EvidenceEntry("Trust +0.12", "analysis", "rule_based_model"),
+                ),
+            ),
+        ],
+    )
+
+
+class TestCausalChainCoverage:
+    def test_rejects_fallback_text_when_steps_provided(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "No causal chain data is available for this scenario.\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_causal_chain_coverage(report, ri, "en") is False
+
+    def test_rejects_missing_agent(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "The change caused tactical confusion for Juan Mata. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # Ander Herrera is missing.
+        assert _has_causal_chain_coverage(report, ri, "en") is False
+
+    def test_accepts_all_agents_in_separate_paragraphs(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "The change caused tactical confusion for Juan Mata. [analysis]\n\n"
+            "Juan Mata's form declined by 0.11. [analysis]\n\n"
+            "Ander Herrera gained trust. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_causal_chain_coverage(report, ri, "en") is True
+
+    def test_one_paragraph_passes_coverage_fails_format(self) -> None:
+        """3 steps in 1 paragraph — coverage passes (sentences ok) but format fails."""
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "The change caused tactical confusion for Juan Mata. [analysis] "
+            "Juan Mata's form declined by 0.11. [analysis] "
+            "Ander Herrera gained trust. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # Content coverage passes (3 sentences, all agents).
+        assert _has_causal_chain_coverage(report, ri, "en") is True
+        # Paragraph format fails (1 paragraph, need 3).
+        assert _has_causal_chain_paragraph_format(report, ri, "en") is False
+
+    def test_is_valid_report_catches_paragraph_count(self) -> None:
+        """_is_valid_report includes paragraph count as hard fail."""
+        from iffootball.llm.report_generation import _is_valid_report
+
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "Confusion for Juan Mata. [analysis] "
+            "Mata form dropped. [analysis] "
+            "Ander Herrera gained trust. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        valid, issues = _is_valid_report(report, ri, "en")
+        assert not valid
+        assert "causal chain paragraph count too low" in issues
+
+    def test_no_steps_passes(self) -> None:
+        ri = _make_report_input()
+        report = "## Causal Chain\n\nNo data. [analysis]\n\n## Limitations\n\n- None."
+        assert _has_causal_chain_coverage(report, ri, "en") is True
+
+    def test_compact_mode_exempt(self) -> None:
+        """Compact hides causal_chain — no coverage needed."""
+        from iffootball.simulation.report_planner import DisplayHints
+
+        ri = ReportInput(
+            trigger_description="test",
+            points_mean_a=0.0,
+            points_mean_b=0.0,
+            points_mean_diff=0.0,
+            cascade_count_diff={},
+            n_runs=1,
+            player_impacts=[],
+            action_explanations=[],
+            limitations=[],
+            display_hints=DisplayHints(
+                section_order=("summary", "key_differences", "player_impact", "limitations"),
+                expanded_step_ids=frozenset(),
+                collapsed_step_ids=frozenset(),
+                featured_players=(),
+                show_limitations_info=False,
+            ),
+            causal_steps=[
+                CausalStepEntry(
+                    step_id="cs-001",
+                    cause="test",
+                    effect="test",
+                    affected_agent="A",
+                    event_type="form_drop",
+                    depth=1,
+                    paragraph_label="analysis",
+                    evidence_labels=("data",),
+                    evidence=(EvidenceEntry("test", "data", "simulation_output"),),
+                ),
+            ],
+        )
+        report = "## Summary\n\nOK. [data]\n\n## Limitations\n\n- None."
+        assert _has_causal_chain_coverage(report, ri, "en") is True
+
+    def test_is_valid_report_catches_missing_steps(self) -> None:
+        from iffootball.llm.report_generation import _is_valid_report
+
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\n"
+            "No causal chain data is available for this scenario.\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        valid, issues = _is_valid_report(report, ri, "en")
+        assert not valid
+        assert "causal chain steps missing" in issues
+
+    def test_retry_includes_step_count_and_agents(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        issues = ["causal chain steps missing"]
+        instruction = _build_retry_instruction(
+            issues, {}, "en", report_input=ri,
+        )
+        assert "3" in instruction  # 3 steps
+        assert "Juan Mata" in instruction
+        assert "Ander Herrera" in instruction
+
+    def test_retry_includes_paragraph_count(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        issues = ["causal chain paragraph count too low"]
+        instruction = _build_retry_instruction(
+            issues, {}, "en", report_input=ri,
+        )
+        assert "3 paragraphs" in instruction
+        assert "blank line" in instruction
+
+    def test_ja_retry_includes_paragraph_count(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        issues = ["causal chain paragraph count too low"]
+        instruction = _build_retry_instruction(
+            issues, {}, "ja", report_input=ri,
+        )
+        assert "3個の段落" in instruction
+        assert "空行" in instruction
+
+    def test_ja_retry_direction_includes_guidance(self) -> None:
+        issues = ["summary direction contradicts input data"]
+        instruction = _build_retry_instruction(issues, {}, "ja")
+        assert "increased" in instruction or "増加" in instruction
+        assert "decreased" in instruction or "減少" in instruction
+
+    def test_ja_causal_chain_one_paragraph_fails(self) -> None:
+        """JA: 3 steps in 1 paragraph — coverage passes but format fails."""
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## サマリー\n\nOK。[データ]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n"
+            "監督交代でJuan Mataの理解度が低下した。[分析]"
+            "Juan Mataのフォームが0.11低下した。[分析]"
+            "Ander Herreraの信頼度が上昇した。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        assert _has_causal_chain_coverage(report, ri, "ja") is True
+        assert _has_causal_chain_paragraph_format(report, ri, "ja") is False
+
+    def test_ja_causal_chain_three_paragraphs_passes(self) -> None:
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## サマリー\n\nOK。[データ]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n"
+            "監督交代でJuan Mataの理解度が低下した。[分析]\n\n"
+            "Juan Mataのフォームが0.11低下した。[分析]\n\n"
+            "Ander Herreraの信頼度が上昇した。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        assert _has_causal_chain_coverage(report, ri, "ja") is True
+        assert _has_causal_chain_paragraph_format(report, ri, "ja") is True
+
+    def test_rejects_merged_same_agent_steps(self) -> None:
+        """3 steps but only 2 paragraphs — one Juan Mata step was merged."""
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "Juan Mata's form declined due to the tactical reset. [analysis]\n\n"
+            "Ander Herrera gained trust. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # 3 steps expected, but only 2 paragraphs. Both agents present but
+        # cs-001 (tactical confusion for Mata) was merged into cs-002.
+        assert _has_causal_chain_coverage(report, ri, "en") is False
+
+    def test_accepts_three_paragraphs_for_three_steps(self) -> None:
+        """3 steps and 3 paragraphs — coverage met."""
+        ri = _make_report_input_with_causal_steps()
+        report = (
+            "## Summary\n\nOK. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\n"
+            "The tactical reset caused understanding to drop for Juan Mata. [analysis]\n\n"
+            "Juan Mata's form then declined by 0.11. [analysis]\n\n"
+            "Ander Herrera gained trust as a pressing-oriented player. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_causal_chain_coverage(report, ri, "en") is True

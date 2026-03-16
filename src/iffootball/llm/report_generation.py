@@ -389,6 +389,8 @@ class ValidationDebug:
         used_fallback:     Whether the final output is a fallback report.
         used_retry:        Whether the retry output was accepted.
         section_label_detail: Per-section label counts from sentence-level check.
+        initial_report:    Raw post-processed report from first attempt (for diagnosis).
+        retry_report:      Raw post-processed report from retry attempt (for diagnosis).
     """
 
     initial_issues: list[str]
@@ -396,6 +398,8 @@ class ValidationDebug:
     used_fallback: bool
     used_retry: bool
     section_label_detail: dict[str, dict[str, int]]
+    initial_report: str = ""
+    retry_report: str = ""
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to JSON-safe dict."""
@@ -405,6 +409,8 @@ class ValidationDebug:
             "used_fallback": self.used_fallback,
             "used_retry": self.used_retry,
             "section_label_detail": self.section_label_detail,
+            "initial_report": self.initial_report,
+            "retry_report": self.retry_report,
         }
 
 
@@ -495,6 +501,7 @@ def generate_report_with_debug(
     if not raw or not raw.strip():
         debug.used_fallback = True
         debug.initial_issues = ["empty_response"]
+        debug.initial_report = raw or ""
         return fallback, debug
 
     report = raw.strip()
@@ -502,6 +509,7 @@ def generate_report_with_debug(
     if not _has_required_sections(report, lang=lang, section_order=section_order):
         debug.used_fallback = True
         debug.initial_issues = ["missing_required_sections"]
+        debug.initial_report = report
         return fallback, debug
 
     # Post-process: strip quality notes and normalize expressions.
@@ -510,16 +518,18 @@ def generate_report_with_debug(
     # Validate output quality. Retry once on failure.
     valid, issues = _is_valid_report(report, report_input, lang)
     debug.initial_issues = issues
+    debug.initial_report = report
     debug.section_label_detail = _section_label_detail(report, lang)
 
     if not valid:
-        retry_report = _retry_once(
+        retry_raw = _retry_once(
             client, messages, issues, lang,
             section_detail=debug.section_label_detail,
             report_input=report_input,
         )
-        if retry_report is not None:
-            retry_report = _postprocess(retry_report, lang)
+        if retry_raw is not None:
+            retry_report = _postprocess(retry_raw, lang)
+            debug.retry_report = retry_report
             retry_valid, retry_issues = _is_valid_report(
                 retry_report, report_input, lang,
             )
@@ -1484,6 +1494,103 @@ def _has_no_summary_highlights_overuse(
     return mentioned < 3
 
 
+# Fallback texts that indicate missing causal chain.
+_CAUSAL_FALLBACK_EN = "no causal chain data is available"
+_CAUSAL_FALLBACK_JA = "因果連鎖データはありません"
+
+
+def _extract_causal_chain_text(report: str, lang: str) -> str:
+    """Extract Causal Chain section text (lowercased)."""
+    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    cc_heading = headings.get("causal_chain", "## Causal Chain")
+    if cc_heading not in report:
+        return ""
+    start = report.index(cc_heading) + len(cc_heading)
+    rest = report[start:]
+    next_heading = rest.find("\n## ")
+    return (rest[:next_heading] if next_heading != -1 else rest).lower()
+
+
+def _has_causal_chain_coverage(
+    report: str,
+    report_input: ReportInput,
+    lang: str,
+) -> bool:
+    """Hard check: Causal Chain content completeness.
+
+    Fails on:
+    - Fallback text present when steps are provided.
+    - Any affected_agent missing from section text.
+    - Sentence count < step count (content actually missing).
+
+    Paragraph count is checked separately by
+    _has_causal_chain_paragraph_format(), which is also a hard fail.
+    """
+    if not report_input.causal_steps:
+        return True
+
+    if report_input.display_hints is not None:
+        if "causal_chain" not in report_input.display_hints.section_order:
+            return True  # Compact mode.
+
+    section_text = _extract_causal_chain_text(report, lang)
+    if not section_text.strip():
+        return False  # Section missing entirely.
+
+    # Hard fail: fallback text.
+    fallback = _CAUSAL_FALLBACK_JA if lang == "ja" else _CAUSAL_FALLBACK_EN
+    if fallback.lower() in section_text:
+        return False
+
+    # Hard fail: affected_agent missing.
+    unique_agents = {s.affected_agent for s in report_input.causal_steps}
+    for agent in unique_agents:
+        if agent.lower() not in section_text:
+            return False
+
+    # Hard fail: sentence count < step count.
+    n_steps = len(report_input.causal_steps)
+    if lang == "ja":
+        n_sentences = section_text.count("。")
+    else:
+        sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
+        n_sentences = len(sent_end.findall(section_text))
+
+    if n_sentences < n_steps:
+        return False
+
+    return True
+
+
+def _has_causal_chain_paragraph_format(
+    report: str,
+    report_input: ReportInput,
+    lang: str,
+) -> bool:
+    """Hard check: paragraph count >= step count.
+
+    Returns False when steps are crammed into fewer paragraphs than
+    expected. Prompt requires "1 step = 1 paragraph", and this
+    validator enforces that contract as a hard fail.
+    """
+    if not report_input.causal_steps:
+        return True
+
+    if report_input.display_hints is not None:
+        if "causal_chain" not in report_input.display_hints.section_order:
+            return True
+
+    section_text = _extract_causal_chain_text(report, lang)
+    if not section_text.strip():
+        return True  # Content check handles this.
+
+    n_steps = len(report_input.causal_steps)
+    paragraphs = [
+        p.strip() for p in section_text.split("\n\n") if p.strip()
+    ]
+    return len(paragraphs) >= n_steps
+
+
 def _is_valid_report(
     report: str,
     report_input: ReportInput,
@@ -1525,6 +1632,12 @@ def _is_valid_report(
 
     if not _has_correct_summary_tradeoff(report, report_input, lang):
         issues.append("summary tradeoff uses wrong metric")
+
+    if not _has_causal_chain_coverage(report, report_input, lang):
+        issues.append("causal chain steps missing")
+
+    if not _has_causal_chain_paragraph_format(report, report_input, lang):
+        issues.append("causal chain paragraph count too low")
 
     return (len(issues) == 0, issues)
 
@@ -1620,7 +1733,9 @@ def _build_retry_instruction(
         if lang == "ja":
             base += (
                 " サマリーで増減の方向語が入力データと矛盾しています。"
-                "入力の direction フィールドに従ってください。"
+                "各イベントの direction フィールドを確認してください。"
+                "direction が increased なら「増加」、decreased なら「減少」と書いてください。"
+                "方向を推測せず、入力どおりに従ってください。"
             )
         else:
             base += (
@@ -1659,8 +1774,9 @@ def _build_retry_instruction(
             event_names = _EVENT_NAMES_JA
             display = event_names.get(tradeoff, tradeoff)
             base += (
-                f" サマリーのトレードオフ文では「{display}」を使ってください。"
-                "他の指標に差し替えないでください。"
+                f" サマリーのトレードオフ文では「{display}」の数値変化のみを述べてください。"
+                "他の指標名（戦術的混乱・適応の進行など）をサマリーに入れないでください。"
+                "総括文にもイベント名を入れないでください。"
             )
         else:
             event_names_en = _EVENT_NAMES_EN
@@ -1668,6 +1784,46 @@ def _build_retry_instruction(
             base += (
                 f" In Summary, use '{display}' for the trade-off sentence. "
                 "Do not substitute another metric."
+            )
+
+    if "causal chain steps missing" in issues:
+        if report_input is not None and report_input.causal_steps:
+            n_steps = len(report_input.causal_steps)
+            agents = ", ".join(
+                sorted({s.affected_agent for s in report_input.causal_steps})
+            )
+            if lang == "ja":
+                base += (
+                    f" 因果連鎖セクションで提供された{n_steps}件のステップを"
+                    f"すべて順序どおりに記述してください。"
+                    f"影響を受けた選手: {agents}。"
+                    "選手名は入力どおりの表記をそのまま使ってください。"
+                    "日本語訳や代名詞への置き換えは禁止です。"
+                    "「因果連鎖データはありません」とは書かないでください。"
+                )
+            else:
+                base += (
+                    f" Causal Chain must cover all {n_steps} provided steps "
+                    f"in order. Affected agents: {agents}. "
+                    "Do not write the fallback text."
+                )
+
+    if "causal chain paragraph count too low" in issues:
+        n = 0
+        if report_input is not None and report_input.causal_steps:
+            n = len(report_input.causal_steps)
+        if lang == "ja":
+            base += (
+                f" 「因果連鎖」セクションを正確に{n}個の段落で書き直してください。"
+                f"段落1=ステップ1、段落2=ステップ2、段落3=ステップ3。"
+                "各段落の間に必ず空行を1行入れてください。"
+                "1段落に1ステップだけを書いてください。"
+            )
+        else:
+            base += (
+                f" Write exactly {n} paragraphs in Causal Chain, one per step. "
+                "Separate each paragraph with a blank line. "
+                "Do not combine multiple steps in one paragraph."
             )
 
     return base

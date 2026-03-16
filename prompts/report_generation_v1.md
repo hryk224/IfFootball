@@ -39,8 +39,8 @@ Write a short paragraph that answers "what happened and what does it mean?" — 
 
 1. **Trigger** (1 sentence, `[data]`): What change was simulated.
 2. **Outcome** (1 sentence, `[data]`): The main result (points direction + number).
-3. **Trade-off** (0-1 sentence, `[analysis]`): If `display_hints.summary_tradeoff_metric` is provided, use **exactly that metric** for the trade-off sentence. Do not substitute another metric even if it also changes. Do not mention other metrics in this sentence.
-4. **Takeaway** (0-1 sentence, `[analysis]`): A one-sentence overall conclusion about the scenario (e.g. "net positive but with transition costs"). Do not repeat specific numbers from Outcome.
+3. **Trade-off** (1 sentence, `[data]`): If `display_hints.summary_tradeoff_metric` is provided, state **exactly that metric's numeric change**. Do not substitute another metric. Do not mention other event names in this sentence.
+4. **Takeaway** (1 sentence, `[analysis]`): A one-sentence overall conclusion. Do not repeat specific event names or numbers. E.g. "net positive but with transition costs".
 
 Rules:
 
@@ -48,13 +48,14 @@ Rules:
 - Do NOT list `highlights` entries here — that is the job of Key Differences.
 - At most 2 numeric values in the entire Summary (points diff + one trade-off metric).
 - When mentioning event changes, use the `direction` from `highlights` — do not guess or reverse.
+- **Takeaway must not contain event names** (e.g. "tactical confusion", "adaptation progress"). Keep it abstract.
 
 Example (standard, 4 sentences):
 
 ```
 Manchester United dismissed Van Gaal and appointed Mourinho at week 29. [data]
 Mean total points increased by 2.1 over 20 simulation runs. [data]
-Form drop events increased by 8.4 per run, indicating a short-term adaptation cost. [analysis]
+Form drop events increased by 8.4 per run. [data]
 Overall, the change shows a net positive outcome with transition trade-offs. [analysis]
 ```
 
@@ -79,21 +80,27 @@ Do NOT output raw key-value format like `metric_name: ..., diff: ..., unit: ...`
 
 ### `## Causal Chain`
 
-Write one paragraph per `causal_steps` entry in the given order. Do not reorder, skip, or add steps.
+**When `causal_steps` is provided (non-empty array), write exactly N paragraphs, where N is the number of steps.** Paragraph 1 = step 1, Paragraph 2 = step 2, etc. Separate each paragraph with a blank line. Do not skip, merge, or add steps.
 
-For each step:
+For each paragraph:
 
-- Describe how the cause led to the effect for the named player.
+- Describe how the cause led to the effect for the named `affected_agent`.
+- The agent must appear by name.
 - The paragraph label must match `paragraph_label`. Never use `[data]` for a cause-effect paragraph.
-- You may cite evidence `[data]` inline, but the overall cause-effect sentence carries `paragraph_label`.
+- You may cite evidence `[data]` inline, but the cause-effect sentence carries `paragraph_label`.
 
-Do not mention input field names or data structure in the text. If no causal data is available, write: "No causal chain data is available for this scenario."
+Do not mention input field names or data structure in the text.
 
-Example:
+Only if `causal_steps` is empty or absent, write: "No causal chain data is available for this scenario."
+
+Example (3 steps → 3 paragraphs):
 
 ```
-The managerial change triggered a tactical reset, causing all players to lose tactical understanding. [analysis]
-Juan Mata's form declined as he struggled to adapt to the new system, with his form dropping by 0.11. [analysis]
+The managerial change triggered a tactical reset, causing Juan Mata to lose tactical understanding. [analysis]
+
+Juan Mata's form declined as he struggled to adapt, dropping by 0.11. [analysis]
+
+Ander Herrera gained trust as a pressing-oriented player suited to the new approach. [analysis]
 ```
 
 ---
