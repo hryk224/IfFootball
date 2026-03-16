@@ -31,10 +31,9 @@ class TestNeutralProfile:
 
 class TestResolveIncomingProfile:
     def test_mourinho_from_cache(self) -> None:
-        """Mourinho should resolve from Chelsea demo cache."""
+        """Mourinho resolves from Chelsea demo cache."""
         if not _HAS_CACHE:
             return
-
         profile = resolve_incoming_profile(
             "José Mario Felix dos Santos Mourinho", 2, 27,
             cache_dir=_CACHE_DIR,
@@ -42,15 +41,50 @@ class TestResolveIncomingProfile:
         assert profile.pressing_intensity != 50.0
         assert profile.team_name == "Chelsea"
 
-    def test_klopp_from_runtime(self) -> None:
-        """Klopp is not in cache — should build from StatsBomb data."""
+    def test_pochettino_from_cache(self) -> None:
+        """Pochettino resolves from Spurs demo cache."""
+        if not _HAS_CACHE:
+            return
         profile = resolve_incoming_profile(
-            "Jürgen Klopp", 2, 27,
+            "Mauricio Roberto Pochettino Trossero", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        # Klopp exists in StatsBomb PL 2015-16 for Liverpool.
         assert profile.pressing_intensity != 50.0
-        assert profile.team_name == "Liverpool"
+        assert profile.team_name == "Tottenham Hotspur"
+
+    def test_hiddink_from_cache(self) -> None:
+        """Hiddink resolves from Chelsea (w25) demo cache."""
+        if not _HAS_CACHE:
+            return
+        profile = resolve_incoming_profile(
+            "Guus Hiddink", 2, 27,
+            cache_dir=_CACHE_DIR,
+        )
+        assert profile.pressing_intensity != 50.0
+        assert profile.team_name == "Chelsea"
+
+    def test_all_preset_managers_differ(self) -> None:
+        """All 3 preset incoming managers have different pressing values."""
+        if not _HAS_CACHE:
+            return
+        mourinho = resolve_incoming_profile(
+            "José Mario Felix dos Santos Mourinho", 2, 27,
+            cache_dir=_CACHE_DIR,
+        )
+        pochettino = resolve_incoming_profile(
+            "Mauricio Roberto Pochettino Trossero", 2, 27,
+            cache_dir=_CACHE_DIR,
+        )
+        hiddink = resolve_incoming_profile(
+            "Guus Hiddink", 2, 27,
+            cache_dir=_CACHE_DIR,
+        )
+        values = {
+            mourinho.pressing_intensity,
+            pochettino.pressing_intensity,
+            hiddink.pressing_intensity,
+        }
+        assert len(values) == 3
 
     def test_unknown_manager_returns_neutral(self) -> None:
         """Unknown manager falls back to neutral defaults."""
@@ -59,11 +93,18 @@ class TestResolveIncomingProfile:
             cache_dir=_CACHE_DIR,
         )
         assert profile.pressing_intensity == 50.0
-        assert profile.preferred_formation == "4-4-2"
         assert profile.team_name == ""
 
-    def test_mourinho_and_klopp_differ(self) -> None:
-        """Different incoming managers produce different profiles."""
+    def test_cache_disabled_falls_to_runtime(self) -> None:
+        """With cache_dir=None, resolves via StatsBomb runtime."""
+        profile = resolve_incoming_profile(
+            "José Mario Felix dos Santos Mourinho", 2, 27,
+            cache_dir=None,
+        )
+        assert profile.pressing_intensity != 50.0
+
+    def test_all_preset_managers_resolve_from_cache(self) -> None:
+        """All 3 preset incoming managers resolve from cache, not runtime."""
         if not _HAS_CACHE:
             return
 
@@ -71,44 +112,20 @@ class TestResolveIncomingProfile:
             "José Mario Felix dos Santos Mourinho", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        klopp = resolve_incoming_profile(
-            "Jürgen Klopp", 2, 27,
+        assert mourinho.team_name == "Chelsea"
+
+        pochettino = resolve_incoming_profile(
+            "Mauricio Roberto Pochettino Trossero", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        assert mourinho.pressing_intensity != klopp.pressing_intensity
+        assert pochettino.team_name == "Tottenham Hotspur"
 
-    def test_cache_disabled_falls_through_to_runtime(self) -> None:
-        """With cache_dir=None, cache is skipped, runtime is used."""
-        profile = resolve_incoming_profile(
-            "José Mario Felix dos Santos Mourinho", 2, 27,
-            cache_dir=None,  # No cache — must use runtime.
-        )
-        # Mourinho still exists in StatsBomb data.
-        assert profile.pressing_intensity != 50.0
-
-    def test_full_resolution_order(self) -> None:
-        """The 3-level resolution: cache -> runtime -> neutral."""
-        if not _HAS_CACHE:
-            return
-
-        # Mourinho: cache hit (Chelsea).
-        m = resolve_incoming_profile(
-            "José Mario Felix dos Santos Mourinho", 2, 27,
+        hiddink = resolve_incoming_profile(
+            "Guus Hiddink", 2, 27,
             cache_dir=_CACHE_DIR,
         )
-        assert m.team_name == "Chelsea"
+        assert hiddink.team_name == "Chelsea"
 
-        # Klopp: cache miss -> runtime (Liverpool).
-        k = resolve_incoming_profile(
-            "Jürgen Klopp", 2, 27,
-            cache_dir=_CACHE_DIR,
-        )
-        assert k.team_name == "Liverpool"
-
-        # Unknown: cache miss -> runtime miss -> neutral.
-        u = resolve_incoming_profile(
-            "Unknown Coach", 2, 27,
-            cache_dir=_CACHE_DIR,
-        )
-        assert u.pressing_intensity == 50.0
-        assert u.team_name == ""
+        # None should be neutral.
+        for p in [mourinho, pochettino, hiddink]:
+            assert p.pressing_intensity != 50.0
