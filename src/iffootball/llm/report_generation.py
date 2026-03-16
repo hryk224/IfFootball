@@ -33,18 +33,12 @@ from iffootball.simulation.report_planner import DisplayHints
 
 _PROMPT_DIR = Path(__file__).parents[3] / "prompts"
 
-_PROMPT_PATHS: dict[str, Path] = {
-    "en": _PROMPT_DIR / "report_generation_v1.md",
-    "ja": _PROMPT_DIR / "report_generation_ja_v1.md",
-}
+_PROMPT_PATH = _PROMPT_DIR / "report_generation_v1.md"
 
 
-def _load_system_prompt(path: Path | None = None, lang: str = "en") -> str:
+def _load_system_prompt(path: Path | None = None) -> str:
     """Load system prompt from file. Raises FileNotFoundError if missing."""
-    if path is not None:
-        resolved = path
-    else:
-        resolved = _PROMPT_PATHS.get(lang, _PROMPT_PATHS["en"])
+    resolved = path or _PROMPT_PATH
     return resolved.read_text(encoding="utf-8")
 
 
@@ -52,22 +46,13 @@ def _load_system_prompt(path: Path | None = None, lang: str = "en") -> str:
 # Constants
 # ---------------------------------------------------------------------------
 
-# Section type -> heading per language.
-_SECTION_HEADINGS: dict[str, dict[str, str]] = {
-    "en": {
-        "summary": "## Summary",
-        "key_differences": "## Key Differences",
-        "causal_chain": "## Causal Chain",
-        "player_impact": "## Player Impact",
-        "limitations": "## Limitations",
-    },
-    "ja": {
-        "summary": "## サマリー",
-        "key_differences": "## 主な差分",
-        "causal_chain": "## 因果連鎖",
-        "player_impact": "## 選手への影響",
-        "limitations": "## 制約事項",
-    },
+# Section type -> heading.
+_SECTION_HEADINGS: dict[str, str] = {
+    "summary": "## Summary",
+    "key_differences": "## Key Differences",
+    "causal_chain": "## Causal Chain",
+    "player_impact": "## Player Impact",
+    "limitations": "## Limitations",
 }
 
 # Default section order (all sections).
@@ -79,11 +64,8 @@ _DEFAULT_SECTION_ORDER: tuple[str, ...] = (
     "limitations",
 )
 
-# Required section headings per language (backward compat).
-REQUIRED_SECTIONS: dict[str, tuple[str, ...]] = {
-    lang: tuple(headings.values())
-    for lang, headings in _SECTION_HEADINGS.items()
-}
+# Required section headings (backward compat).
+REQUIRED_SECTIONS: tuple[str, ...] = tuple(_SECTION_HEADINGS.values())
 
 # Default limitations describing known simulation constraints.
 DEFAULT_LIMITATIONS: dict[str, tuple[str, ...]] = {
@@ -99,64 +81,36 @@ DEFAULT_LIMITATIONS: dict[str, tuple[str, ...]] = {
         "xGA/90 is a fixed baseline; the current model does not simulate "
         "defensive impact of manager changes.",
     ),
-    "ja": (
-        "試合結果は xG ベースの Poisson モデルで決定されます。"
-        "試合内イベント（シュート、パス）はシミュレートされません。",
-        "後任監督の戦術指標（PPDA、ポゼッション、プログレッシブパス）は "
-        "推定値であり、シミュレーション出力ではありません。",
-        "選手の技術属性はシミュレーション中固定です。"
-        "変化するのは動的状態（フォーム、疲労、信頼度、戦術理解度）のみです。",
-        "ターニングポイントでの行動分布はルールベースです。"
-        "LLM ベースの行動選択はまだ実装されていません。",
-        "xGA/90 は固定ベースラインです。現在のモデルは "
-        "監督交代による守備への影響をシミュレートしません。",
-    ),
 }
 
 # Default number of top impacted players to include.
 DEFAULT_TOP_PLAYERS = 3
 
-# Fallback body text per section per language.
-_FALLBACK_BODY: dict[str, dict[str, str]] = {
-    "en": {
-        "summary": "Unable to generate structured report.",
-        "key_differences": "No data available.",
-        "causal_chain": "No data available.",
-        "player_impact": "No data available.",
-        "limitations": "Report generation failed. Results may be incomplete.",
-    },
-    "ja": {
-        "summary": "構造化レポートを生成できませんでした。",
-        "key_differences": "データがありません。",
-        "causal_chain": "データがありません。",
-        "player_impact": "データがありません。",
-        "limitations": "レポート生成に失敗しました。結果が不完全な可能性があります。",
-    },
+# Fallback body text per section.
+_FALLBACK_BODY: dict[str, str] = {
+    "summary": "Unable to generate structured report.",
+    "key_differences": "No data available.",
+    "causal_chain": "No data available.",
+    "player_impact": "No data available.",
+    "limitations": "Report generation failed. Results may be incomplete.",
 }
 
 
 def _build_fallback(
-    lang: str = "en",
     section_order: tuple[str, ...] | None = None,
 ) -> str:
     """Build a fallback report respecting the section order."""
     order = section_order or _DEFAULT_SECTION_ORDER
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
-    bodies = _FALLBACK_BODY.get(lang, _FALLBACK_BODY["en"])
     parts: list[str] = []
     for section in order:
-        heading = headings.get(section)
-        body = bodies.get(section, "No data available.")
+        heading = _SECTION_HEADINGS.get(section)
+        body = _FALLBACK_BODY.get(section, "No data available.")
         if heading:
             parts.append(f"{heading}\n\n{body}")
     return "\n\n".join(parts)
 
 
-# Backward compat aliases.
-_FALLBACK_REPORTS: dict[str, str] = {
-    lang: _build_fallback(lang) for lang in _SECTION_HEADINGS
-}
-_FALLBACK_REPORT = _FALLBACK_REPORTS["en"]
+_FALLBACK_REPORT = _build_fallback()
 
 
 # ---------------------------------------------------------------------------
@@ -424,15 +378,15 @@ def generate_report(
     report_input: ReportInput,
     *,
     system_prompt: str | None = None,
-    lang: str = "en",
 ) -> str:
     """Generate a structured Markdown comparison report via LLM.
+
+    Only English output is supported. Report language is always EN.
 
     Args:
         client:        LLMClient implementation.
         report_input:  Assembled report input data.
         system_prompt: Override the loaded system prompt (tests only).
-        lang:          Output language ("en" or "ja").
 
     Returns:
         Markdown string with all required sections. Falls back to a
@@ -440,7 +394,7 @@ def generate_report(
         missing required section headings.
     """
     report, _ = generate_report_with_debug(
-        client, report_input, system_prompt=system_prompt, lang=lang,
+        client, report_input, system_prompt=system_prompt,
     )
     return report
 
@@ -450,9 +404,10 @@ def generate_report_with_debug(
     report_input: ReportInput,
     *,
     system_prompt: str | None = None,
-    lang: str = "en",
 ) -> tuple[str, ValidationDebug]:
     """Generate a report and return validation debug info.
+
+    Only English output is supported. Report language is always EN.
 
     Same as generate_report() but additionally returns a ValidationDebug
     object with validator results, failure details, and per-section
@@ -463,7 +418,6 @@ def generate_report_with_debug(
         client:        LLMClient implementation.
         report_input:  Assembled report input data.
         system_prompt: Override the loaded system prompt (tests only).
-        lang:          Output language ("en" or "ja").
 
     Returns:
         Tuple of (report_markdown, validation_debug).
@@ -473,12 +427,12 @@ def generate_report_with_debug(
     if report_input.display_hints is not None:
         section_order = report_input.display_hints.section_order
 
-    fallback = _build_fallback(lang=lang, section_order=section_order)
+    fallback = _build_fallback(section_order=section_order)
 
     prompt = (
         system_prompt
         if system_prompt is not None
-        else _load_system_prompt(lang=lang)
+        else _load_system_prompt()
     )
 
     payload = _build_payload(report_input)
@@ -506,38 +460,38 @@ def generate_report_with_debug(
 
     report = raw.strip()
 
-    if not _has_required_sections(report, lang=lang, section_order=section_order):
+    if not _has_required_sections(report, section_order=section_order):
         debug.used_fallback = True
         debug.initial_issues = ["missing_required_sections"]
         debug.initial_report = report
         return fallback, debug
 
     # Post-process: strip quality notes and normalize expressions.
-    report = _postprocess(report, lang)
+    report = _postprocess(report)
 
     # Validate output quality. Retry once on failure.
-    valid, issues = _is_valid_report(report, report_input, lang)
+    valid, issues = _is_valid_report(report, report_input)
     debug.initial_issues = issues
     debug.initial_report = report
-    debug.section_label_detail = _section_label_detail(report, lang)
+    debug.section_label_detail = _section_label_detail(report)
 
     if not valid:
         retry_raw = _retry_once(
-            client, messages, issues, lang,
+            client, messages, issues,
             section_detail=debug.section_label_detail,
             report_input=report_input,
         )
         if retry_raw is not None:
-            retry_report = _postprocess(retry_raw, lang)
+            retry_report = _postprocess(retry_raw)
             debug.retry_report = retry_report
             retry_valid, retry_issues = _is_valid_report(
-                retry_report, report_input, lang,
+                retry_report, report_input,
             )
             debug.retry_issues = retry_issues
             if retry_valid:
                 debug.used_retry = True
                 debug.section_label_detail = _section_label_detail(
-                    retry_report, lang,
+                    retry_report,
                 )
                 return retry_report, debug
         # Retry also failed — fall back.
@@ -679,7 +633,6 @@ def _strip_quality_notes(report: str) -> str:
 
 def _has_required_sections(
     report: str,
-    lang: str = "en",
     section_order: tuple[str, ...] | None = None,
 ) -> bool:
     """Check that the report contains expected section headings.
@@ -687,7 +640,7 @@ def _has_required_sections(
     When section_order is provided (from DisplayHints), only those
     sections are required. Otherwise all default sections are required.
     """
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     if section_order is not None:
         required = [headings[s] for s in section_order if s in headings]
     else:
@@ -702,26 +655,11 @@ def _has_required_sections(
 import re  # noqa: E402
 
 # Known Japanese typos from LLM output -> correct form.
-_JA_TYPO_FIXES: dict[str, str] = {
-    "戦頼度": "戦術理解度",
-    "戦頼": "信頼",
-    "理頼度": "信頼度",
-}
 
 
-def _fix_ja_typos(report: str) -> str:
-    """Fix known Japanese typos that LLMs produce."""
-    for wrong, correct in _JA_TYPO_FIXES.items():
-        report = report.replace(wrong, correct)
-    return report
 
 
-# ---------------------------------------------------------------------------
-# Sign/direction normalization
-# ---------------------------------------------------------------------------
 
-# EN: "decreased by -35.3" -> "decreased by 35.3"
-#     "increased by -24.0" -> "decreased by 24.0"
 _EN_DIRECTION_NEG = re.compile(
     r"\b((?:increased|decreased|dropped|risen|grew|fell|improved|worsened|changed))"
     r"(\s+by\s+)-(\d+(?:\.\d+)?)",
@@ -769,52 +707,20 @@ def _normalize_signed_deltas_en(report: str) -> str:
 
 # JA: "-35.3 減少" -> "35.3 減少"
 #     "-24.0 増加" -> "24.0 減少"
-_JA_DIRECTION_NEG = re.compile(
-    r"-(\d+(?:\.\d+)?)\s*(減少|増加|低下|上昇|悪化|改善|変化)"
-)
-
-_JA_DIRECTION_FLIP: dict[str, str] = {
-    "減少": "減少",  # "-X 減少" -> "X 減少" (remove double negative)
-    "低下": "低下",  # "-X 低下" -> "X 低下"
-    "悪化": "悪化",  # "-X 悪化" -> "X 悪化"
-    "増加": "減少",  # "-X 増加" -> "X 減少" (flip direction)
-    "上昇": "低下",  # "-X 上昇" -> "X 低下"
-    "改善": "悪化",  # "-X 改善" -> "X 悪化"
-    "変化": "変化",  # "-X 変化" -> "X 変化"
-}
 
 
-def _normalize_signed_deltas_ja(report: str) -> str:
-    """Normalize Japanese sign/direction double expressions.
-
-    Fixes:
-        "-35.3 減少" -> "35.3 減少"
-        "-24.0 増加" -> "24.0 減少"
-        "-35.3減少"  -> "35.3 減少"
-    """
-
-    def _ja_fix(m: re.Match[str]) -> str:
-        number = m.group(1)
-        direction = m.group(2)
-        corrected = _JA_DIRECTION_FLIP.get(direction, "変化")
-        return f"{number} {corrected}"
-
-    return _JA_DIRECTION_NEG.sub(_ja_fix, report)
 
 
-# ---------------------------------------------------------------------------
-# Post-process wrapper
-# ---------------------------------------------------------------------------
 
 
-def _postprocess(report: str, lang: str) -> str:
+
+
+
+
+def _postprocess(report: str) -> str:
     """Apply all post-processing fixes to a report."""
     report = _strip_quality_notes(report)
-    if lang == "ja":
-        report = _fix_ja_typos(report)
-        report = _normalize_signed_deltas_ja(report)
-    else:
-        report = _normalize_signed_deltas_en(report)
+    report = _normalize_signed_deltas_en(report)
     return report
 
 
@@ -823,9 +729,7 @@ def _postprocess(report: str, lang: str) -> str:
 # ---------------------------------------------------------------------------
 
 _LABELS_EN = {"[data]", "[analysis]", "[hypothesis]"}
-_LABELS_JA = {"[データ]", "[分析]", "[仮説]"}
 
-# Sections that require per-sentence labels.
 _LABELLED_SECTIONS = {"summary", "key_differences", "causal_chain", "player_impact"}
 
 # Internal field names that should never appear in output text.
@@ -846,9 +750,9 @@ _INTERNAL_TOKENS = (
 )
 
 
-def _extract_labelled_sections(report: str, lang: str) -> str:
+def _extract_labelled_sections(report: str) -> str:
     """Extract text from sections that should have per-sentence labels."""
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     limitations_heading = headings.get("limitations", "## Limitations")
 
     # Collect text from labelled sections only (exclude Limitations).
@@ -875,7 +779,7 @@ def _extract_labelled_sections(report: str, lang: str) -> str:
     return "\n".join(parts)
 
 
-def _has_sentence_level_labels(report: str, lang: str) -> bool:
+def _has_sentence_level_labels(report: str) -> bool:
     """Check that substantive sentences end with a label.
 
     Splits text into label-terminated units and checks that each
@@ -885,17 +789,14 @@ def _has_sentence_level_labels(report: str, lang: str) -> bool:
     The expected pattern is: "Sentence text. [label]"
     Split happens *after* the closing bracket of each label.
     """
-    labels = _LABELS_JA if lang == "ja" else _LABELS_EN
-    text = _extract_labelled_sections(report, lang)
+    labels = _LABELS_EN
+    text = _extract_labelled_sections(report)
     if not text.strip():
         return True  # No labelled sections to check.
 
     # Split into label-terminated units.
     # Pattern: split after "]" followed by whitespace or newline.
-    if lang == "ja":
-        label_pat = r"\[(?:データ|分析|仮説)\]"
-    else:
-        label_pat = r"\[(?:data|analysis|hypothesis)\]"
+    label_pat = r"\[(?:data|analysis|hypothesis)\]"
 
     # Split after label closings.
     units = re.split(f"({label_pat})", text)
@@ -918,12 +819,9 @@ def _has_sentence_level_labels(report: str, lang: str) -> bool:
     # "Sentence A. [data]" = 1 sentence, 1 label -> OK
     # "Sentence A. Sentence B. [data]" = 2 sentences, 1 label -> 1 missing
     # "Sentence A. Sentence B." = 2 sentences, 0 labels -> 2 missing
-    if lang == "ja":
-        sent_end = re.compile(r"。")
-    else:
-        # Match sentence-ending punctuation: a period/!/? followed by
-        # a space+uppercase or end of string. Excludes decimals like 2.1.
-        sent_end = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
+    # Match sentence-ending punctuation: a period/!/? followed by
+    # a space+uppercase or end of string. Excludes decimals like 2.1.
+    sent_end = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
 
     labelled = 0
     unlabelled = 0
@@ -965,25 +863,21 @@ def _has_sentence_level_labels(report: str, lang: str) -> bool:
     return unlabelled <= 1
 
 
-def _section_label_detail(report: str, lang: str) -> dict[str, dict[str, int]]:
+def _section_label_detail(report: str) -> dict[str, dict[str, int]]:
     """Return per-section labelled/unlabelled sentence counts.
 
     Useful for diagnosing which section causes sentence-level label
     failures. Returns a dict: section_type -> {"labelled": N, "unlabelled": M}.
     """
-    labels = _LABELS_JA if lang == "ja" else _LABELS_EN
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    labels = _LABELS_EN
+    headings = _SECTION_HEADINGS
     limitations_heading = headings.get("limitations", "## Limitations")
     labelled_headings = {
         headings[s]: s for s in _LABELLED_SECTIONS if s in headings
     }
 
-    if lang == "ja":
-        label_pat = r"\[(?:データ|分析|仮説)\]"
-        sent_end = re.compile(r"。")
-    else:
-        label_pat = r"\[(?:data|analysis|hypothesis)\]"
-        sent_end = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
+    label_pat = r"\[(?:data|analysis|hypothesis)\]"
+    sent_end = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
 
     # Parse report into section blocks.
     lines = report.split("\n")
@@ -1059,14 +953,11 @@ _EN_MULTI_CLAIM = re.compile(
     r"(?:\s|,)",
     re.IGNORECASE,
 )
-_JA_MULTI_CLAIM = re.compile(
-    r"(?:一方で|し、|ことから|ため、|とともに|に加えて)"
-)
 
 
-def _extract_player_impact_text(report: str, lang: str) -> str:
+def _extract_player_impact_text(report: str) -> str:
     """Extract the Player Impact section text."""
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     pi_heading = headings.get("player_impact", "## Player Impact")
     if pi_heading not in report:
         return ""
@@ -1076,7 +967,7 @@ def _extract_player_impact_text(report: str, lang: str) -> str:
     return rest[:next_heading] if next_heading != -1 else rest
 
 
-def _has_no_multi_claim_sentences(report: str, lang: str) -> bool:
+def _has_no_multi_claim_sentences(report: str) -> bool:
     """Check that Player Impact sentences don't combine multiple claims.
 
     Detects connecting words like "while", "indicating", "suggesting"
@@ -1085,11 +976,11 @@ def _has_no_multi_claim_sentences(report: str, lang: str) -> bool:
     interpretation in a single sentence, which violates the 1-claim-
     per-sentence rule.
     """
-    pi_text = _extract_player_impact_text(report, lang)
+    pi_text = _extract_player_impact_text(report)
     if not pi_text.strip():
         return True
 
-    pattern = _JA_MULTI_CLAIM if lang == "ja" else _EN_MULTI_CLAIM
+    pattern = _EN_MULTI_CLAIM
 
     # Check each non-empty line for combining patterns.
     violations = 0
@@ -1113,9 +1004,9 @@ def _has_no_internal_metadata_leak(report: str) -> bool:
     return True
 
 
-def _has_valid_key_differences_format(report: str, lang: str) -> bool:
+def _has_valid_key_differences_format(report: str) -> bool:
     """Check that Key Differences section is reader-facing, not raw key-value."""
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     kd_heading = headings.get("key_differences", "## Key Differences")
 
     if kd_heading not in report:
@@ -1132,23 +1023,11 @@ def _has_valid_key_differences_format(report: str, lang: str) -> bool:
         return False
 
     # JA: check for unreadable number sequences in bullets.
-    if lang == "ja":
-        for line in section_text.split("\n"):
-            line = line.strip()
-            if not line.startswith(("- ", "* ")):
-                continue
-            numbers = re.findall(r"\d+(?:\.\d+)?", line)
-            if len(numbers) >= 3:
-                # 3+ numbers in a bullet: check for explanatory context.
-                context_words = ("→", "（", "から", "ポイント", "回", "平均", "差")
-                if not any(w in line for w in context_words):
-                    return False
-
     return True
 
 
 def _has_no_shared_reset_repetition(
-    report: str, report_input: ReportInput, lang: str,
+    report: str, report_input: ReportInput,
 ) -> bool:
     """Check that shared reset axes are not repeated per player.
 
@@ -1159,7 +1038,7 @@ def _has_no_shared_reset_repetition(
     if meta is None or not meta.shared_resets:
         return True
 
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     pi_heading = headings.get("player_impact", "## Player Impact")
 
     if pi_heading not in report:
@@ -1232,7 +1111,7 @@ def _has_no_shared_reset_repetition(
 
 
 def _has_expected_hypothesis_labels(
-    report: str, report_input: ReportInput, lang: str,
+    report: str, report_input: ReportInput,
 ) -> bool:
     """Check that hypothesis labels appear when expected.
 
@@ -1241,7 +1120,7 @@ def _has_expected_hypothesis_labels(
 
     Also checks for speculative language without hypothesis labels.
     """
-    hyp_label = "[仮説]" if lang == "ja" else "[hypothesis]"
+    hyp_label = "[hypothesis]"
     has_hyp_label = hyp_label in report
 
     # Check 1: If input has hypothesis steps, output should too.
@@ -1253,15 +1132,10 @@ def _has_expected_hypothesis_labels(
             return False
 
     # Check 2: Speculative language without any hypothesis label.
-    if lang == "ja":
-        speculative = re.search(
-            r"(可能性がある|かもしれない|だろう|であろう|推測)", report
-        )
-    else:
-        speculative = re.search(
-            r"\b(likely|may|might|could|possibly|speculative)\b", report,
-            re.IGNORECASE,
-        )
+    speculative = re.search(
+        r"\b(likely|may|might|could|possibly|speculative)\b", report,
+        re.IGNORECASE,
+    )
     if speculative and not has_hyp_label:
         return False
 
@@ -1278,30 +1152,16 @@ _EVENT_NAMES_EN: dict[str, str] = {
     "playing_time_change": "playing time change",
     "total_points_mean": "points",
 }
-_EVENT_NAMES_JA: dict[str, str] = {
-    "adaptation_progress": "適応の進行",
-    "tactical_confusion": "戦術的混乱",
-    "form_drop": "フォーム低下",
-    "trust_decline": "信頼低下",
-    "squad_unrest": "チーム内不安",
-    "playing_time_change": "出場機会の変化",
-    "total_points_mean": "勝ち点",
-}
 
 _DIRECTION_WORDS_EN: dict[str, tuple[str, ...]] = {
     "increased": ("increased", "rose", "grew", "improved", "higher"),
     "decreased": ("decreased", "dropped", "fell", "declined", "reduced", "lower"),
-}
-_DIRECTION_WORDS_JA: dict[str, tuple[str, ...]] = {
-    "increased": ("増加", "上昇", "改善", "向上"),
-    "decreased": ("減少", "低下", "悪化"),
 }
 
 
 def _has_consistent_summary_directions(
     report: str,
     report_input: ReportInput,
-    lang: str,
 ) -> bool:
     """Check that direction words in Summary match highlights.direction.
 
@@ -1312,7 +1172,7 @@ def _has_consistent_summary_directions(
     if not report_input.highlights:
         return True
 
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     summary_heading = headings.get("summary", "## Summary")
     if summary_heading not in report:
         return True
@@ -1323,8 +1183,8 @@ def _has_consistent_summary_directions(
     next_heading = rest.find("\n## ")
     summary_text = (rest[:next_heading] if next_heading != -1 else rest).lower()
 
-    event_names = _EVENT_NAMES_JA if lang == "ja" else _EVENT_NAMES_EN
-    dir_words = _DIRECTION_WORDS_JA if lang == "ja" else _DIRECTION_WORDS_EN
+    event_names = _EVENT_NAMES_EN
+    dir_words = _DIRECTION_WORDS_EN
     opposite = {"increased": "decreased", "decreased": "increased"}
 
     for hl in report_input.highlights:
@@ -1354,10 +1214,7 @@ def _has_consistent_summary_directions(
                 break
 
             # Find the sentence boundaries around the event mention.
-            if lang == "ja":
-                sent_delim = "。"
-            else:
-                sent_delim = "."
+            sent_delim = "."
             sentence_start = summary_text.rfind(sent_delim, 0, event_pos)
             sentence_start = sentence_start + 1 if sentence_start != -1 else 0
             sentence_end = summary_text.find(sent_delim, event_pos)
@@ -1374,9 +1231,9 @@ def _has_consistent_summary_directions(
     return True
 
 
-def _extract_summary_text(report: str, lang: str) -> str:
+def _extract_summary_text(report: str) -> str:
     """Extract Summary section text."""
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     summary_heading = headings.get("summary", "## Summary")
     if summary_heading not in report:
         return ""
@@ -1386,34 +1243,31 @@ def _extract_summary_text(report: str, lang: str) -> str:
     return rest[:next_heading].strip() if next_heading != -1 else rest.strip()
 
 
-def _count_summary_sentences(report: str, lang: str) -> int:
+def _count_summary_sentences(report: str) -> int:
     """Count sentences in the Summary section.
 
     For EN, counts sentence-ending punctuation followed by a space+uppercase,
     a space+label bracket, or end-of-text. This handles patterns like
     "sentence. [data] Next sentence." correctly.
     """
-    text = _extract_summary_text(report, lang)
+    text = _extract_summary_text(report)
     if not text:
         return 0
-    if lang == "ja":
-        return text.count("。")
-    else:
-        sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
-        return len(sent_end.findall(text))
+    sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
+    return len(sent_end.findall(text))
 
 
-def _has_valid_summary_length(report: str, report_input: ReportInput, lang: str) -> bool:
+def _has_valid_summary_length(report: str, report_input: ReportInput) -> bool:
     """Check that Summary does not exceed max_sentences."""
     max_sentences = 4  # default
     if report_input.display_hints is not None:
         max_sentences = report_input.display_hints.summary_max_sentences
-    count = _count_summary_sentences(report, lang)
+    count = _count_summary_sentences(report)
     return count <= max_sentences
 
 
 def _has_correct_summary_tradeoff(
-    report: str, report_input: ReportInput, lang: str,
+    report: str, report_input: ReportInput,
 ) -> bool:
     """Check that Summary trade-off sentence uses the designated metric.
 
@@ -1428,11 +1282,11 @@ def _has_correct_summary_tradeoff(
     if tradeoff is None:
         return True
 
-    summary_text = _extract_summary_text(report, lang).lower()
+    summary_text = _extract_summary_text(report).lower()
     if not summary_text:
         return True
 
-    event_names = _EVENT_NAMES_JA if lang == "ja" else _EVENT_NAMES_EN
+    event_names = _EVENT_NAMES_EN
     tradeoff_display = event_names.get(tradeoff, tradeoff.replace("_", " ")).lower()
 
     # Check that the designated tradeoff metric is mentioned.
@@ -1444,7 +1298,7 @@ def _has_correct_summary_tradeoff(
     if not report_input.highlights:
         return True
 
-    analysis_label = "[分析]" if lang == "ja" else "[analysis]"
+    analysis_label = "[analysis]"
 
     lead = report_input.highlights[0].metric_name if report_input.highlights else ""
     for hl in report_input.highlights:
@@ -1467,7 +1321,7 @@ def _has_correct_summary_tradeoff(
 
 
 def _has_no_summary_highlights_overuse(
-    report: str, report_input: ReportInput, lang: str,
+    report: str, report_input: ReportInput,
 ) -> bool:
     """Check that Summary does not list 3+ highlights (that's Key Differences' job).
 
@@ -1477,11 +1331,11 @@ def _has_no_summary_highlights_overuse(
     if not report_input.highlights:
         return True
 
-    summary_text = _extract_summary_text(report, lang).lower()
+    summary_text = _extract_summary_text(report).lower()
     if not summary_text:
         return True
 
-    event_names = _EVENT_NAMES_JA if lang == "ja" else _EVENT_NAMES_EN
+    event_names = _EVENT_NAMES_EN
     mentioned = 0
     for hl in report_input.highlights:
         display_name = event_names.get(
@@ -1496,12 +1350,11 @@ def _has_no_summary_highlights_overuse(
 
 # Fallback texts that indicate missing causal chain.
 _CAUSAL_FALLBACK_EN = "no causal chain data is available"
-_CAUSAL_FALLBACK_JA = "因果連鎖データはありません"
 
 
-def _extract_causal_chain_text(report: str, lang: str) -> str:
+def _extract_causal_chain_text(report: str) -> str:
     """Extract Causal Chain section text (lowercased)."""
-    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    headings = _SECTION_HEADINGS
     cc_heading = headings.get("causal_chain", "## Causal Chain")
     if cc_heading not in report:
         return ""
@@ -1514,7 +1367,6 @@ def _extract_causal_chain_text(report: str, lang: str) -> str:
 def _has_causal_chain_coverage(
     report: str,
     report_input: ReportInput,
-    lang: str,
 ) -> bool:
     """Hard check: Causal Chain content completeness.
 
@@ -1533,12 +1385,12 @@ def _has_causal_chain_coverage(
         if "causal_chain" not in report_input.display_hints.section_order:
             return True  # Compact mode.
 
-    section_text = _extract_causal_chain_text(report, lang)
+    section_text = _extract_causal_chain_text(report)
     if not section_text.strip():
         return False  # Section missing entirely.
 
     # Hard fail: fallback text.
-    fallback = _CAUSAL_FALLBACK_JA if lang == "ja" else _CAUSAL_FALLBACK_EN
+    fallback = _CAUSAL_FALLBACK_EN
     if fallback.lower() in section_text:
         return False
 
@@ -1550,11 +1402,8 @@ def _has_causal_chain_coverage(
 
     # Hard fail: sentence count < step count.
     n_steps = len(report_input.causal_steps)
-    if lang == "ja":
-        n_sentences = section_text.count("。")
-    else:
-        sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
-        n_sentences = len(sent_end.findall(section_text))
+    sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
+    n_sentences = len(sent_end.findall(section_text))
 
     if n_sentences < n_steps:
         return False
@@ -1565,7 +1414,6 @@ def _has_causal_chain_coverage(
 def _has_causal_chain_paragraph_format(
     report: str,
     report_input: ReportInput,
-    lang: str,
 ) -> bool:
     """Hard check: paragraph count >= step count.
 
@@ -1580,7 +1428,7 @@ def _has_causal_chain_paragraph_format(
         if "causal_chain" not in report_input.display_hints.section_order:
             return True
 
-    section_text = _extract_causal_chain_text(report, lang)
+    section_text = _extract_causal_chain_text(report)
     if not section_text.strip():
         return True  # Content check handles this.
 
@@ -1594,7 +1442,6 @@ def _has_causal_chain_paragraph_format(
 def _is_valid_report(
     report: str,
     report_input: ReportInput,
-    lang: str,
 ) -> tuple[bool, list[str]]:
     """Run all validators on a generated report.
 
@@ -1603,40 +1450,40 @@ def _is_valid_report(
     """
     issues: list[str] = []
 
-    if not _has_sentence_level_labels(report, lang):
+    if not _has_sentence_level_labels(report):
         issues.append("missing sentence-level labels")
 
     if not _has_no_internal_metadata_leak(report):
         issues.append("internal metadata leaked")
 
-    if not _has_valid_key_differences_format(report, lang):
+    if not _has_valid_key_differences_format(report):
         issues.append("invalid key differences format")
 
-    if not _has_no_shared_reset_repetition(report, report_input, lang):
+    if not _has_no_shared_reset_repetition(report, report_input):
         issues.append("shared reset repeated per player")
 
-    if not _has_expected_hypothesis_labels(report, report_input, lang):
+    if not _has_expected_hypothesis_labels(report, report_input):
         issues.append("hypothesis wording without hypothesis label")
 
-    if not _has_no_multi_claim_sentences(report, lang):
+    if not _has_no_multi_claim_sentences(report):
         issues.append("multi-claim sentences in player impact")
 
-    if not _has_consistent_summary_directions(report, report_input, lang):
+    if not _has_consistent_summary_directions(report, report_input):
         issues.append("summary direction contradicts input data")
 
-    if not _has_valid_summary_length(report, report_input, lang):
+    if not _has_valid_summary_length(report, report_input):
         issues.append("summary exceeds max sentences")
 
-    if not _has_no_summary_highlights_overuse(report, report_input, lang):
+    if not _has_no_summary_highlights_overuse(report, report_input):
         issues.append("summary lists too many highlights")
 
-    if not _has_correct_summary_tradeoff(report, report_input, lang):
+    if not _has_correct_summary_tradeoff(report, report_input):
         issues.append("summary tradeoff uses wrong metric")
 
-    if not _has_causal_chain_coverage(report, report_input, lang):
+    if not _has_causal_chain_coverage(report, report_input):
         issues.append("causal chain steps missing")
 
-    if not _has_causal_chain_paragraph_format(report, report_input, lang):
+    if not _has_causal_chain_paragraph_format(report, report_input):
         issues.append("causal chain paragraph count too low")
 
     return (len(issues) == 0, issues)
@@ -1650,12 +1497,7 @@ _RETRY_INSTRUCTION_EN = (
     "Revise the report. Fix only these issues: {issues}. "
     "Keep the same facts and section structure."
 )
-_RETRY_INSTRUCTION_JA = (
-    "レポートを修正してください。以下の問題のみ修正してください: {issues}。"
-    "同じ事実とセクション構造を維持してください。"
-)
 
-# Section-specific label fix instructions.
 _SECTION_LABEL_FIX_EN: dict[str, str] = {
     "summary": (
         "In Summary, ensure every sentence ends with its own label."
@@ -1673,38 +1515,21 @@ _SECTION_LABEL_FIX_EN: dict[str, str] = {
     ),
 }
 
-_SECTION_LABEL_FIX_JA: dict[str, str] = {
-    "summary": (
-        "「サマリー」で各文が文末ラベルを持つようにしてください。"
-    ),
-    "key_differences": (
-        "「主な差分」で各項目が文末ラベルを持つようにしてください。"
-    ),
-    "causal_chain": (
-        "「因果連鎖」で各文が文末ラベルを持つようにしてください。"
-    ),
-    "player_impact": (
-        "「選手への影響」セクションの文末ラベルを修正してください。"
-        "複数文を1つのラベルでまとめず、各文を独立してラベル付けしてください。"
-        "数値と解釈を1文に混ぜないでください。"
-    ),
-}
 
 
 def _build_retry_instruction(
     issues: list[str],
     section_detail: dict[str, dict[str, int]],
-    lang: str,
     report_input: ReportInput | None = None,
 ) -> str:
     """Build a retry instruction with section-specific guidance."""
-    template = _RETRY_INSTRUCTION_JA if lang == "ja" else _RETRY_INSTRUCTION_EN
+    template = _RETRY_INSTRUCTION_EN
     base = template.format(issues="; ".join(issues))
 
     # Add section-specific fixes for label issues.
     if "missing sentence-level labels" in issues:
         section_fixes = (
-            _SECTION_LABEL_FIX_JA if lang == "ja" else _SECTION_LABEL_FIX_EN
+            _SECTION_LABEL_FIX_EN
         )
         fix_parts: list[str] = []
         for section, counts in section_detail.items():
@@ -1715,76 +1540,42 @@ def _build_retry_instruction(
 
     # Add multi-claim fix for Player Impact.
     if "multi-claim sentences in player impact" in issues:
-        if lang == "ja":
-            base += (
-                " 「選手への影響」で複数主張を1文にまとめないでください。"
-                "「一方で」「〜し、」「〜ことから」を使って結合せず、"
-                "各主張を別々の文にしてください。"
-            )
-        else:
-            base += (
-                " In Player Impact, do not combine multiple claims in one "
-                "sentence. Split sentences joined by 'while', 'indicating', "
-                "'suggesting', or 'which' into separate labelled sentences."
-            )
+        base += (
+            " In Player Impact, do not combine multiple claims in one "
+            "sentence. Split sentences joined by 'while', 'indicating', "
+            "'suggesting', or 'which' into separate labelled sentences."
+        )
 
     # Add summary direction fix.
     if "summary direction contradicts input data" in issues:
-        if lang == "ja":
-            base += (
-                " サマリーで増減の方向語が入力データと矛盾しています。"
-                "各イベントの direction フィールドを確認してください。"
-                "direction が increased なら「増加」、decreased なら「減少」と書いてください。"
-                "方向を推測せず、入力どおりに従ってください。"
-            )
-        else:
-            base += (
-                " In Summary, the direction words contradict the input data. "
-                "Check each event: use 'increased' only when direction is "
-                "'increased', and 'decreased' only when direction is 'decreased'."
-            )
+        base += (
+            " In Summary, the direction words contradict the input data. "
+            "Check each event: use 'increased' only when direction is "
+            "'increased', and 'decreased' only when direction is 'decreased'."
+        )
 
     if "summary exceeds max sentences" in issues:
         max_s = 4  # default
         if report_input is not None and report_input.display_hints is not None:
             max_s = report_input.display_hints.summary_max_sentences
-        if lang == "ja":
-            base += f" サマリーの文数を最大{max_s}文に減らしてください。"
-        else:
-            base += f" Reduce Summary to at most {max_s} sentences."
+        base += f" Reduce Summary to at most {max_s} sentences."
 
     if "summary lists too many highlights" in issues:
-        if lang == "ja":
-            base += (
-                " サマリーで指標を3つ以上列挙しないでください。"
-                "勝ち点差とトレードオフ指標1つだけにしてください。"
-                "残りは「主な差分」セクションに任せてください。"
-            )
-        else:
-            base += (
-                " Summary lists too many metrics. Use at most points diff "
-                "and one trade-off metric. Leave the rest to Key Differences."
-            )
+        base += (
+            " Summary lists too many metrics. Use at most points diff "
+            "and one trade-off metric. Leave the rest to Key Differences."
+        )
 
     if "summary tradeoff uses wrong metric" in issues and report_input is not None:
         tradeoff = ""
         if report_input.display_hints and report_input.display_hints.summary_tradeoff_metric:
             tradeoff = report_input.display_hints.summary_tradeoff_metric
-        if lang == "ja":
-            event_names = _EVENT_NAMES_JA
-            display = event_names.get(tradeoff, tradeoff)
-            base += (
-                f" サマリーのトレードオフ文では「{display}」の数値変化のみを述べてください。"
-                "他の指標名（戦術的混乱・適応の進行など）をサマリーに入れないでください。"
-                "総括文にもイベント名を入れないでください。"
-            )
-        else:
-            event_names_en = _EVENT_NAMES_EN
-            display = event_names_en.get(tradeoff, tradeoff.replace("_", " "))
-            base += (
-                f" In Summary, use '{display}' for the trade-off sentence. "
-                "Do not substitute another metric."
-            )
+        event_names_en = _EVENT_NAMES_EN
+        display = event_names_en.get(tradeoff, tradeoff.replace("_", " "))
+        base += (
+            f" In Summary, use '{display}' for the trade-off sentence. "
+            "Do not substitute another metric."
+        )
 
     if "causal chain steps missing" in issues:
         if report_input is not None and report_input.causal_steps:
@@ -1792,39 +1583,21 @@ def _build_retry_instruction(
             agents = ", ".join(
                 sorted({s.affected_agent for s in report_input.causal_steps})
             )
-            if lang == "ja":
-                base += (
-                    f" 因果連鎖セクションで提供された{n_steps}件のステップを"
-                    f"すべて順序どおりに記述してください。"
-                    f"影響を受けた選手: {agents}。"
-                    "選手名は入力どおりの表記をそのまま使ってください。"
-                    "日本語訳や代名詞への置き換えは禁止です。"
-                    "「因果連鎖データはありません」とは書かないでください。"
-                )
-            else:
-                base += (
-                    f" Causal Chain must cover all {n_steps} provided steps "
-                    f"in order. Affected agents: {agents}. "
-                    "Do not write the fallback text."
-                )
+            base += (
+                f" Causal Chain must cover all {n_steps} provided steps "
+                f"in order. Affected agents: {agents}. "
+                "Do not write the fallback text."
+            )
 
     if "causal chain paragraph count too low" in issues:
         n = 0
         if report_input is not None and report_input.causal_steps:
             n = len(report_input.causal_steps)
-        if lang == "ja":
-            base += (
-                f" 「因果連鎖」セクションを正確に{n}個の段落で書き直してください。"
-                f"段落1=ステップ1、段落2=ステップ2、段落3=ステップ3。"
-                "各段落の間に必ず空行を1行入れてください。"
-                "1段落に1ステップだけを書いてください。"
-            )
-        else:
-            base += (
-                f" Write exactly {n} paragraphs in Causal Chain, one per step. "
-                "Separate each paragraph with a blank line. "
-                "Do not combine multiple steps in one paragraph."
-            )
+        base += (
+            f" Write exactly {n} paragraphs in Causal Chain, one per step. "
+            "Separate each paragraph with a blank line. "
+            "Do not combine multiple steps in one paragraph."
+        )
 
     return base
 
@@ -1833,13 +1606,12 @@ def _retry_once(
     client: "LLMClient",
     messages: list[dict[str, str]],
     issues: list[str],
-    lang: str,
     section_detail: dict[str, dict[str, int]] | None = None,
     report_input: ReportInput | None = None,
 ) -> str | None:
     """Attempt one retry with issue feedback appended."""
     instruction = _build_retry_instruction(
-        issues, section_detail or {}, lang, report_input=report_input,
+        issues, section_detail or {}, report_input=report_input,
     )
 
     retry_messages = list(messages) + [
@@ -1899,11 +1671,5 @@ def _validate_player_facts(report: str, report_input: ReportInput) -> bool:
 
 
 # Japanese dangling sentence endings.
-_JA_DANGLING_ENDINGS = re.compile(
-    r"(が|けれど|しかし|一方で|ただし|ものの)\s*$", re.MULTILINE
-)
 
 
-def _has_dangling_sentences(report: str) -> bool:
-    """Check for incomplete Japanese sentences ending with conjunctions."""
-    return bool(_JA_DANGLING_ENDINGS.search(report))

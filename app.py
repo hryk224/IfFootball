@@ -224,16 +224,8 @@ def _render_input() -> SimulationParams | None:
             )
         )
 
-    # Report language selector.
-    report_lang = str(
-        st.sidebar.selectbox(
-            "Report Language",
-            options=["en", "ja"],
-            format_func=lambda x: {"en": "English", "ja": "日本語"}[x],
-        )
-        or "en"
-    )
-    st.session_state["_report_lang"] = report_lang
+    # Report language is EN-only (canonical output).
+    st.session_state["_report_lang"] = "en"
 
     # LLM status display.
     try:
@@ -670,17 +662,11 @@ def _render_summary(
         )
 
     # Summary card.
-    report_lang = st.session_state.get("_report_lang", "en")
     with st.container(border=True):
         st.markdown(headline)
-        if report_lang == "ja":
-            st.caption(
-                f"以下の勝ち点は、残り試合を {n_runs} 回シミュレーションしたときの平均総勝ち点です。"
-            )
-        else:
-            st.caption(
-                f"Points below are mean total points across remaining fixtures over {n_runs} simulation runs."
-            )
+        st.caption(
+            f"Points below are mean total points across remaining fixtures over {n_runs} simulation runs."
+        )
         col1, col2, col3 = st.columns(3)
         col1.metric(
             "Points (mean)",
@@ -693,11 +679,7 @@ def _render_summary(
             delta=f"{comparison.delta.points_median_diff:+.1f}",
         )
         col3.metric("Runs", f"{n_runs}")
-        st.caption(
-            "これはシナリオ比較であり、予測ではありません。"
-            if report_lang == "ja"
-            else "This is a scenario comparison, not a prediction."
-        )
+        st.caption("This is a scenario comparison, not a prediction.")
 
 
 def _render_team_radar(
@@ -851,12 +833,7 @@ def _render_report(
         n_runs=comparison.no_change.n_runs,
         player_impacts=player_entries,
         action_explanations=[],
-        limitations=list(
-            DEFAULT_LIMITATIONS.get(
-                st.session_state.get("_report_lang", "en"),
-                DEFAULT_LIMITATIONS["en"],
-            )
-        ),
+        limitations=list(DEFAULT_LIMITATIONS["en"]),
     )
 
     if llm_client is not None:
@@ -866,25 +843,21 @@ def _render_report(
             "Data handling follows the provider's policy."
         )
         try:
-            report_lang = st.session_state.get("_report_lang", "en")
-            report_md = generate_report(
-                llm_client, report_input, lang=report_lang
-            )
+            report_md = generate_report(llm_client, report_input)
             # Strip Summary section — already shown at page top.
-            report_md = _strip_summary_section(report_md, lang=report_lang)
+            report_md = _strip_summary_section(report_md)
             st.markdown(report_md)
             return
         except Exception:
             st.warning("LLM report generation failed. Falling back to data report.")
 
     # Fallback: data-only report.
-    report_lang = st.session_state.get("_report_lang", "en")
-    _render_data_report(report_input, lang=report_lang)
+    _render_data_report(report_input)
 
 
-def _strip_summary_section(report_md: str, lang: str = "en") -> str:
+def _strip_summary_section(report_md: str) -> str:
     """Remove the Summary section from LLM report (shown separately at top)."""
-    summary_heading = "## Summary" if lang == "en" else "## サマリー"
+    summary_heading = "## Summary"
     if summary_heading not in report_md:
         return report_md
 
@@ -899,25 +872,26 @@ def _strip_summary_section(report_md: str, lang: str = "en") -> str:
     return (report_md[:start] + rest[next_heading + 1 :]).strip()
 
 
-def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
+def _render_data_report(report_input: ReportInput) -> None:
     """Render a structured report from data without LLM.
 
     Summary and Player Impact are rendered separately above, so this
     section covers Key Differences, Causal Chain, and Limitations only.
     """
-    _L = _DATA_REPORT_LABELS.get(lang, _DATA_REPORT_LABELS["en"])
-
-    st.subheader(_L["key_differences"])
-    st.caption(_L["points_definition"].format(n_runs=report_input.n_runs))
+    st.subheader("Key Differences")
+    st.caption(
+        f"Mean total points across remaining fixtures over "
+        f"{report_input.n_runs} simulation runs."
+    )
     st.write(
-        f"- {_L['mean_points']}: {_L['no_change']} = {report_input.points_mean_a:.1f}, "
-        f"{_L['with_change']} = {report_input.points_mean_b:.1f} "
-        f"(diff: {report_input.points_mean_diff:+.1f}) [{_L['fact']}]"
+        f"- Mean total points: no change = {report_input.points_mean_a:.1f}, "
+        f"with change = {report_input.points_mean_b:.1f} "
+        f"(diff: {report_input.points_mean_diff:+.1f}) [data]"
     )
     for event_type, diff in report_input.cascade_count_diff.items():
-        st.write(f"- {event_type}: {diff:+.2f} /run [{_L['fact']}]")
+        st.write(f"- {event_type}: {diff:+.2f} /run [data]")
 
-    st.subheader(_L["causal_chain"])
+    st.subheader("Causal Chain")
     if report_input.action_explanations:
         for a in report_input.action_explanations:
             st.write(
@@ -926,55 +900,19 @@ def _render_data_report(report_input: ReportInput, lang: str = "en") -> None:
             )
     else:
         if report_input.cascade_count_diff:
-            st.write(_L["causal_chain_summary"])
+            st.write(
+                "Causal chain summary from cascade event frequencies "
+                "(LLM-based detailed analysis available with API key):"
+            )
             for et, diff in report_input.cascade_count_diff.items():
-                direction = _L["increased"] if diff > 0 else _L["decreased"]
-                st.write(f"- **{et}** {direction} {abs(diff):.1f} /run [{_L['fact']}]")
+                direction = "increased by" if diff > 0 else "decreased by"
+                st.write(f"- **{et}** {direction} {abs(diff):.1f} /run [data]")
         else:
-            st.write(_L["no_cascade"])
+            st.write("No cascade events recorded in this simulation.")
 
-    st.subheader(_L["limitations"])
+    st.subheader("Limitations")
     for limitation in report_input.limitations:
         st.write(f"- {limitation}")
-
-
-# Data-only report labels per language.
-_DATA_REPORT_LABELS: dict[str, dict[str, str]] = {
-    "en": {
-        "key_differences": "Key Differences",
-        "points_definition": "Mean total points across remaining fixtures over {n_runs} simulation runs.",
-        "mean_points": "Mean total points",
-        "no_change": "no change",
-        "with_change": "with change",
-        "fact": "data",
-        "causal_chain": "Causal Chain",
-        "causal_chain_summary": (
-            "Causal chain summary from cascade event frequencies "
-            "(LLM-based detailed analysis available with API key):"
-        ),
-        "increased": "increased by",
-        "decreased": "decreased by",
-        "no_cascade": "No cascade events recorded in this simulation.",
-        "limitations": "Limitations",
-    },
-    "ja": {
-        "key_differences": "主な差分",
-        "points_definition": "残り試合を {n_runs} 回シミュレーションしたときの平均総勝ち点です。",
-        "mean_points": "平均総勝ち点",
-        "no_change": "変更なし",
-        "with_change": "変更あり",
-        "fact": "データ",
-        "causal_chain": "因果連鎖",
-        "causal_chain_summary": (
-            "カスケードイベント頻度からの因果連鎖サマリー"
-            "（API キー設定で LLM 詳細分析が利用可能）:"
-        ),
-        "increased": "増加",
-        "decreased": "減少",
-        "no_cascade": "このシミュレーションではカスケードイベントは記録されませんでした。",
-        "limitations": "制約事項",
-    },
-}
 
 
 # ---------------------------------------------------------------------------

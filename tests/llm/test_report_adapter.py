@@ -301,15 +301,6 @@ class TestStructuredToReportInput:
         )
         assert ri.limitations == custom
 
-    def test_limitations_ja(self) -> None:
-        ri = structured_to_report_input(
-            _make_explanation(), n_runs=10, lang="ja"
-        )
-        # Japanese system + scenario limitations.
-        assert len(ri.limitations) >= 6
-        # At least one contains Japanese text.
-        assert any("シミュレート" in lim for lim in ri.limitations)
-
     def test_plan_adds_display_hints(self) -> None:
         exp = _make_explanation()
         plan = plan_report(exp, DisplayContext.STANDARD)
@@ -331,7 +322,7 @@ class TestStructuredToReportInput:
     def test_plan_analyst_includes_info_limitations(self) -> None:
         exp = _make_explanation()
         plan = plan_report(exp, DisplayContext.ANALYST)
-        ri = structured_to_report_input(exp, plan=plan, n_runs=10, lang="en")
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
 
         # Analyst includes info-severity limitations.
         # System (5) + scenario warning (1) + scenario info would be included.

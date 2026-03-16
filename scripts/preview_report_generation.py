@@ -1,4 +1,4 @@
-"""Preview report-generation output in English and Japanese.
+"""Preview report-generation output (English only).
 
 Uses a fixed sample ReportInput and the configured LLM provider to
 generate Markdown reports for prompt-quality review.
@@ -10,7 +10,6 @@ Supports two modes:
 
 Usage:
     uv run python scripts/preview_report_generation.py
-    uv run python scripts/preview_report_generation.py --lang ja
     uv run python scripts/preview_report_generation.py --stdout
     uv run python scripts/preview_report_generation.py --use-planner --display-context compact
     uv run python scripts/preview_report_generation.py --use-planner --repeat 3 --save-payload
@@ -59,7 +58,7 @@ _DEFAULT_OUTPUT_DIR = Path(__file__).parents[1] / "output" / "report_preview"
 # ---------------------------------------------------------------------------
 
 
-def _make_report_input(lang: str) -> ReportInput:
+def _make_report_input() -> ReportInput:
     return ReportInput(
         trigger_description=(
             "Manager change: Louis van Gaal -> José Mario Felix dos Santos Mourinho "
@@ -122,7 +121,7 @@ def _make_report_input(lang: str) -> ReportInput:
                 confidence_note="Based on rule-based action distribution",
             ),
         ],
-        limitations=list(DEFAULT_LIMITATIONS.get(lang, DEFAULT_LIMITATIONS["en"])),
+        limitations=list(DEFAULT_LIMITATIONS["en"]),
     )
 
 
@@ -447,12 +446,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Preview LLM report-generation output."
     )
-    parser.add_argument(
-        "--lang",
-        choices=["en", "ja", "both"],
-        default="both",
-        help="Output language to generate.",
-    )
+    # Language is EN-only (canonical output).
+    # --lang argument removed; report is always in English.
     parser.add_argument(
         "--stdout",
         action="store_true",
@@ -547,7 +542,7 @@ def main() -> None:
     output_dir: Path = args.output_dir or _DEFAULT_OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    langs = ["en", "ja"] if args.lang == "both" else [args.lang]
+    langs = ["en"]
     context = _DISPLAY_CONTEXTS[args.display_context]
     repeat: int = max(1, args.repeat)
 
@@ -565,14 +560,14 @@ def main() -> None:
             ctx_label = f"_{args.display_context}" if args.use_planner else ""
 
             if args.use_planner:
-                report_input, plan = _build_planner_input(lang, context)
+                report_input, plan = _build_planner_input(context)
             else:
-                report_input = _make_report_input(lang)
+                report_input = _make_report_input()
                 plan = None
 
             # Generate report with debug info.
             report, debug = generate_report_with_debug(
-                client, report_input, lang=lang,
+                client, report_input,
             )
 
             # Save report.
@@ -627,7 +622,6 @@ def main() -> None:
 
 
 def _build_planner_input(
-    lang: str,
     context: DisplayContext,
 ) -> tuple[ReportInput, object]:
     """Build ReportInput via the planner pipeline."""
@@ -637,7 +631,6 @@ def _build_planner_input(
         explanation,
         plan=plan,
         n_runs=20,
-        lang=lang,
     )
     return report_input, plan
 

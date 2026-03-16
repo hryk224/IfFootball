@@ -38,7 +38,6 @@ def structured_to_report_input(
     plan: ReportPlan | None = None,
     limitations: list[str] | None = None,
     n_runs: int = 1,
-    lang: str = "en",
 ) -> ReportInput:
     """Convert a StructuredExplanation to a ReportInput.
 
@@ -70,7 +69,6 @@ def structured_to_report_input(
                      from StructuredExplanation.limitations.
         n_runs:      Number of simulation runs (not stored in
                      StructuredExplanation; caller must provide).
-        lang:        Language for limitation messages ("en" or "ja").
 
     Returns:
         ReportInput compatible with generate_report().
@@ -110,7 +108,7 @@ def structured_to_report_input(
     player_impacts = _build_player_impacts(explanation, plan)
 
     # Limitations: respect plan's include_info setting.
-    resolved_limitations = _resolve_limitations(explanation, plan, limitations, lang)
+    resolved_limitations = _resolve_limitations(explanation, plan, limitations)
 
     # Display hints from plan.
     display_hints = plan.to_display_hints() if plan is not None else None
@@ -181,14 +179,13 @@ def _resolve_limitations(
     explanation: StructuredExplanation,
     plan: ReportPlan | None,
     override: list[str] | None,
-    lang: str,
 ) -> list[str]:
     """Resolve limitations list, respecting plan's include_info setting."""
     if override is not None:
         return override
 
     include_info = plan.limitation_placement.include_info if plan is not None else False
-    msg_attr = "message_ja" if lang == "ja" else "message_en"
+    msg_attr = "message_en"
 
     items: list[str] = [
         getattr(item, msg_attr) for item in explanation.limitations.system
