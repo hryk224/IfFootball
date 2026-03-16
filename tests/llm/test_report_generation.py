@@ -21,7 +21,10 @@ from iffootball.llm.report_generation import (
     _has_no_shared_reset_repetition,
     _has_consistent_summary_directions,
     _has_no_multi_claim_sentences,
+    _has_correct_summary_tradeoff,
+    _has_no_summary_highlights_overuse,
     _has_sentence_level_labels,
+    _has_valid_summary_length,
     _has_valid_key_differences_format,
     _normalize_signed_deltas_en,
     _normalize_signed_deltas_ja,
@@ -1133,3 +1136,234 @@ class TestSummaryDirectionConsistency:
         instruction = _build_retry_instruction(issues, {}, "en")
         assert "direction" in instruction.lower()
         assert "Summary" in instruction
+
+
+# ---------------------------------------------------------------------------
+# Summary UX validators
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryLength:
+    def test_rejects_too_many_sentences(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Trigger happened. [data] "
+            "Points increased. [data] "
+            "Adaptation rose. [data] "
+            "Confusion decreased. [data] "
+            "Form dropped. [data] "
+            "This is a trade-off. [analysis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # 6 sentences, default max is 4.
+        assert _has_valid_summary_length(report, ri, "en") is False
+
+    def test_accepts_within_limit(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Trigger happened. [data] "
+            "Points increased by 2.1. [data] "
+            "Form drops increased. [analysis] "
+            "Net positive with costs. [analysis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_valid_summary_length(report, ri, "en") is True
+
+    def test_ja_counts_sentences_by_maru(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## サマリー\n\n"
+            "トリガー。[データ]"
+            "勝ち点増加。[データ]"
+            "フォーム低下増加。[分析]"
+            "全体として改善。[分析]"
+            "適応進行。[データ]\n\n"
+            "## 主な差分\n\n- 勝ち点 [データ]\n\n"
+            "## 因果連鎖\n\n原因。[分析]\n\n"
+            "## 選手への影響\n\n影響。[データ]\n\n"
+            "## 制約事項\n\n- なし。"
+        )
+        # 5 sentences by 。 count, max 4.
+        assert _has_valid_summary_length(report, ri, "ja") is False
+
+
+class TestSummaryHighlightsOveruse:
+    def test_rejects_three_or_more_highlights_mentioned(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased by 2.1. [data] "
+            "Adaptation progress rose by 24.0. [data] "
+            "Tactical confusion decreased by 35.3. [data] "
+            "Form drop increased by 8.4. [data]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # 4 highlight metrics mentioned — too many.
+        assert _has_no_summary_highlights_overuse(report, ri, "en") is False
+
+    def test_accepts_two_highlights_mentioned(self) -> None:
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Trigger happened. [data] "
+            "Points increased by 2.1. [data] "
+            "Form drop increased by 8.4. [analysis]\n\n"
+            "## Key Differences\n\n- Points [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        # Only points + form_drop = 2 metrics mentioned.
+        assert _has_no_summary_highlights_overuse(report, ri, "en") is True
+
+    def test_no_highlights_passes(self) -> None:
+        ri = _make_report_input()
+        report = "## Summary\n\nPoints changed. [data]\n\n## Limitations\n\n- None."
+        assert _has_no_summary_highlights_overuse(report, ri, "en") is True
+
+    def test_is_valid_report_catches_summary_issues(self) -> None:
+        from iffootball.llm.report_generation import _is_valid_report
+
+        ri = _make_report_input_with_highlights()
+        report = (
+            "## Summary\n\n"
+            "Points increased. [data] "
+            "Adaptation progress rose. [data] "
+            "Tactical confusion decreased. [data] "
+            "Form drop increased. [data]\n\n"
+            "## Key Differences\n\n- Points increased by 2.1 [data]\n\n"
+            "## Causal Chain\n\nCause. [analysis]\n\n"
+            "## Player Impact\n\nImpact. [data]\n\n"
+            "## Limitations\n\n- None."
+        )
+        valid, issues = _is_valid_report(report, ri, "en")
+        assert not valid
+        assert "summary lists too many highlights" in issues
+
+    def test_retry_instruction_for_summary_overuse(self) -> None:
+        issues = ["summary lists too many highlights"]
+        instruction = _build_retry_instruction(issues, {}, "en")
+        assert "Key Differences" in instruction
+
+    def test_retry_instruction_for_summary_length_default(self) -> None:
+        issues = ["summary exceeds max sentences"]
+        instruction = _build_retry_instruction(issues, {}, "en")
+        assert "4 sentences" in instruction
+
+    def test_retry_instruction_for_summary_length_compact(self) -> None:
+        from iffootball.simulation.report_planner import DisplayHints
+
+        ri = ReportInput(
+            trigger_description="test",
+            points_mean_a=0.0,
+            points_mean_b=0.0,
+            points_mean_diff=0.0,
+            cascade_count_diff={},
+            n_runs=1,
+            player_impacts=[],
+            action_explanations=[],
+            limitations=[],
+            display_hints=DisplayHints(
+                section_order=(),
+                expanded_step_ids=frozenset(),
+                collapsed_step_ids=frozenset(),
+                featured_players=(),
+                show_limitations_info=False,
+                summary_max_sentences=2,
+            ),
+        )
+        issues = ["summary exceeds max sentences"]
+        instruction = _build_retry_instruction(
+            issues, {}, "en", report_input=ri,
+        )
+        assert "2 sentences" in instruction
+        assert "4 sentences" not in instruction
+
+
+# ---------------------------------------------------------------------------
+# Summary tradeoff metric validator
+# ---------------------------------------------------------------------------
+
+
+def _make_report_input_with_tradeoff() -> ReportInput:
+    """ReportInput with display_hints specifying form_drop as tradeoff."""
+    from iffootball.llm.report_generation import HighlightEntry
+    from iffootball.simulation.report_planner import DisplayHints
+
+    return ReportInput(
+        trigger_description="Manager change at week 29",
+        points_mean_a=12.2,
+        points_mean_b=14.3,
+        points_mean_diff=2.1,
+        cascade_count_diff={},
+        n_runs=20,
+        player_impacts=[],
+        action_explanations=[],
+        limitations=[],
+        display_hints=DisplayHints(
+            section_order=("summary", "key_differences", "causal_chain", "player_impact", "limitations"),
+            expanded_step_ids=frozenset(),
+            collapsed_step_ids=frozenset(),
+            featured_players=(),
+            show_limitations_info=False,
+            summary_max_sentences=4,
+            summary_tradeoff_metric="form_drop",
+        ),
+        highlights=[
+            HighlightEntry("total_points_mean", 2.1, "data", "", "points_mean", "increased"),
+            HighlightEntry("adaptation_progress", 24.0, "data", "", "events_per_run", "increased"),
+            HighlightEntry("tactical_confusion", 35.3, "data", "", "events_per_run", "decreased"),
+            HighlightEntry("form_drop", 8.4, "data", "", "events_per_run", "increased"),
+        ],
+    )
+
+
+class TestSummaryTradeoffMetric:
+    def test_rejects_wrong_metric_in_tradeoff(self) -> None:
+        """Designated tradeoff is form_drop but summary uses adaptation_progress."""
+        ri = _make_report_input_with_tradeoff()
+        report = (
+            "## Summary\n\n"
+            "Manager changed at week 29. [data] "
+            "Points increased by 2.1. [data] "
+            "Adaptation progress events increased by 24.0, indicating a cost. [analysis] "
+            "Net positive with trade-offs. [analysis]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_correct_summary_tradeoff(report, ri, "en") is False
+
+    def test_accepts_correct_tradeoff_metric(self) -> None:
+        ri = _make_report_input_with_tradeoff()
+        report = (
+            "## Summary\n\n"
+            "Manager changed at week 29. [data] "
+            "Points increased by 2.1. [data] "
+            "Form drop events increased by 8.4, indicating a transition cost. [analysis] "
+            "Net positive with trade-offs. [analysis]\n\n"
+            "## Limitations\n\n- None."
+        )
+        assert _has_correct_summary_tradeoff(report, ri, "en") is True
+
+    def test_no_display_hints_passes(self) -> None:
+        ri = _make_report_input()
+        report = "## Summary\n\nOK. [data]\n\n## Limitations\n\n- None."
+        assert _has_correct_summary_tradeoff(report, ri, "en") is True
+
+    def test_retry_includes_metric_name(self) -> None:
+        ri = _make_report_input_with_tradeoff()
+        issues = ["summary tradeoff uses wrong metric"]
+        instruction = _build_retry_instruction(
+            issues, {}, "en", report_input=ri,
+        )
+        assert "form drop" in instruction.lower()

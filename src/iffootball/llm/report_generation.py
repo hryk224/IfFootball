@@ -516,6 +516,7 @@ def generate_report_with_debug(
         retry_report = _retry_once(
             client, messages, issues, lang,
             section_detail=debug.section_label_detail,
+            report_input=report_input,
         )
         if retry_report is not None:
             retry_report = _postprocess(retry_report, lang)
@@ -583,6 +584,8 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
             "collapsed_step_ids": sorted(report_input.display_hints.collapsed_step_ids),
             "featured_players": list(report_input.display_hints.featured_players),
             "show_limitations_info": report_input.display_hints.show_limitations_info,
+            "summary_max_sentences": report_input.display_hints.summary_max_sentences,
+            "summary_tradeoff_metric": report_input.display_hints.summary_tradeoff_metric,
         }
     if report_input.highlights is not None:
         payload["highlights"] = [
@@ -1361,6 +1364,126 @@ def _has_consistent_summary_directions(
     return True
 
 
+def _extract_summary_text(report: str, lang: str) -> str:
+    """Extract Summary section text."""
+    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    summary_heading = headings.get("summary", "## Summary")
+    if summary_heading not in report:
+        return ""
+    start = report.index(summary_heading) + len(summary_heading)
+    rest = report[start:]
+    next_heading = rest.find("\n## ")
+    return rest[:next_heading].strip() if next_heading != -1 else rest.strip()
+
+
+def _count_summary_sentences(report: str, lang: str) -> int:
+    """Count sentences in the Summary section.
+
+    For EN, counts sentence-ending punctuation followed by a space+uppercase,
+    a space+label bracket, or end-of-text. This handles patterns like
+    "sentence. [data] Next sentence." correctly.
+    """
+    text = _extract_summary_text(report, lang)
+    if not text:
+        return 0
+    if lang == "ja":
+        return text.count("。")
+    else:
+        sent_end = re.compile(r"[.!?](?=\s+[A-Z\[]|\s*$)")
+        return len(sent_end.findall(text))
+
+
+def _has_valid_summary_length(report: str, report_input: ReportInput, lang: str) -> bool:
+    """Check that Summary does not exceed max_sentences."""
+    max_sentences = 4  # default
+    if report_input.display_hints is not None:
+        max_sentences = report_input.display_hints.summary_max_sentences
+    count = _count_summary_sentences(report, lang)
+    return count <= max_sentences
+
+
+def _has_correct_summary_tradeoff(
+    report: str, report_input: ReportInput, lang: str,
+) -> bool:
+    """Check that Summary trade-off sentence uses the designated metric.
+
+    When display_hints specifies a summary_tradeoff_metric, the Summary
+    must mention that metric (not a substitute). Also checks that no
+    other non-lead metric appears in an [analysis]-labelled sentence
+    in the Summary, which would indicate the LLM swapped the trade-off.
+    """
+    if report_input.display_hints is None:
+        return True
+    tradeoff = report_input.display_hints.summary_tradeoff_metric
+    if tradeoff is None:
+        return True
+
+    summary_text = _extract_summary_text(report, lang).lower()
+    if not summary_text:
+        return True
+
+    event_names = _EVENT_NAMES_JA if lang == "ja" else _EVENT_NAMES_EN
+    tradeoff_display = event_names.get(tradeoff, tradeoff.replace("_", " ")).lower()
+
+    # Check that the designated tradeoff metric is mentioned.
+    if tradeoff_display not in summary_text:
+        return False
+
+    # Check that no other non-lead, non-tradeoff metric appears in an
+    # analysis-labelled sentence (which would indicate substitution).
+    if not report_input.highlights:
+        return True
+
+    analysis_label = "[分析]" if lang == "ja" else "[analysis]"
+
+    lead = report_input.highlights[0].metric_name if report_input.highlights else ""
+    for hl in report_input.highlights:
+        if hl.metric_name in (lead, tradeoff):
+            continue
+        other_display = event_names.get(
+            hl.metric_name, hl.metric_name.replace("_", " ")
+        ).lower()
+        if other_display not in summary_text:
+            continue
+        # This non-designated metric is mentioned. Check if it's in an
+        # analysis sentence (trade-off position).
+        # Simple heuristic: if the metric appears and there's an [analysis]
+        # label within the same line, it's likely a substituted trade-off.
+        for line in summary_text.split("\n"):
+            if other_display in line and analysis_label.lower() in line:
+                return False
+
+    return True
+
+
+def _has_no_summary_highlights_overuse(
+    report: str, report_input: ReportInput, lang: str,
+) -> bool:
+    """Check that Summary does not list 3+ highlights (that's Key Differences' job).
+
+    Counts how many highlight metric names appear in the Summary text.
+    If 3 or more are mentioned, the Summary is acting as a metrics list.
+    """
+    if not report_input.highlights:
+        return True
+
+    summary_text = _extract_summary_text(report, lang).lower()
+    if not summary_text:
+        return True
+
+    event_names = _EVENT_NAMES_JA if lang == "ja" else _EVENT_NAMES_EN
+    mentioned = 0
+    for hl in report_input.highlights:
+        display_name = event_names.get(
+            hl.metric_name, hl.metric_name.replace("_", " ")
+        )
+        if display_name.lower() in summary_text:
+            mentioned += 1
+
+    # Allow lead metric + 1 trade-off = 2 max. 3+ means overuse.
+    return mentioned < 3
+
+
 def _is_valid_report(
     report: str,
     report_input: ReportInput,
@@ -1393,6 +1516,15 @@ def _is_valid_report(
 
     if not _has_consistent_summary_directions(report, report_input, lang):
         issues.append("summary direction contradicts input data")
+
+    if not _has_valid_summary_length(report, report_input, lang):
+        issues.append("summary exceeds max sentences")
+
+    if not _has_no_summary_highlights_overuse(report, report_input, lang):
+        issues.append("summary lists too many highlights")
+
+    if not _has_correct_summary_tradeoff(report, report_input, lang):
+        issues.append("summary tradeoff uses wrong metric")
 
     return (len(issues) == 0, issues)
 
@@ -1450,6 +1582,7 @@ def _build_retry_instruction(
     issues: list[str],
     section_detail: dict[str, dict[str, int]],
     lang: str,
+    report_input: ReportInput | None = None,
 ) -> str:
     """Build a retry instruction with section-specific guidance."""
     template = _RETRY_INSTRUCTION_JA if lang == "ja" else _RETRY_INSTRUCTION_EN
@@ -1496,6 +1629,47 @@ def _build_retry_instruction(
                 "'increased', and 'decreased' only when direction is 'decreased'."
             )
 
+    if "summary exceeds max sentences" in issues:
+        max_s = 4  # default
+        if report_input is not None and report_input.display_hints is not None:
+            max_s = report_input.display_hints.summary_max_sentences
+        if lang == "ja":
+            base += f" サマリーの文数を最大{max_s}文に減らしてください。"
+        else:
+            base += f" Reduce Summary to at most {max_s} sentences."
+
+    if "summary lists too many highlights" in issues:
+        if lang == "ja":
+            base += (
+                " サマリーで指標を3つ以上列挙しないでください。"
+                "勝ち点差とトレードオフ指標1つだけにしてください。"
+                "残りは「主な差分」セクションに任せてください。"
+            )
+        else:
+            base += (
+                " Summary lists too many metrics. Use at most points diff "
+                "and one trade-off metric. Leave the rest to Key Differences."
+            )
+
+    if "summary tradeoff uses wrong metric" in issues and report_input is not None:
+        tradeoff = ""
+        if report_input.display_hints and report_input.display_hints.summary_tradeoff_metric:
+            tradeoff = report_input.display_hints.summary_tradeoff_metric
+        if lang == "ja":
+            event_names = _EVENT_NAMES_JA
+            display = event_names.get(tradeoff, tradeoff)
+            base += (
+                f" サマリーのトレードオフ文では「{display}」を使ってください。"
+                "他の指標に差し替えないでください。"
+            )
+        else:
+            event_names_en = _EVENT_NAMES_EN
+            display = event_names_en.get(tradeoff, tradeoff.replace("_", " "))
+            base += (
+                f" In Summary, use '{display}' for the trade-off sentence. "
+                "Do not substitute another metric."
+            )
+
     return base
 
 
@@ -1505,10 +1679,11 @@ def _retry_once(
     issues: list[str],
     lang: str,
     section_detail: dict[str, dict[str, int]] | None = None,
+    report_input: ReportInput | None = None,
 ) -> str | None:
     """Attempt one retry with issue feedback appended."""
     instruction = _build_retry_instruction(
-        issues, section_detail or {}, lang,
+        issues, section_detail or {}, lang, report_input=report_input,
     )
 
     retry_messages = list(messages) + [

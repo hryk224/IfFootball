@@ -35,16 +35,27 @@ Generate only the sections listed in `display_hints.section_order` if provided. 
 
 ### `## Summary`
 
-Write 1 paragraph. Each sentence ends with a label. When mentioning event changes, use the `direction` from `highlights` — do not guess or reverse. If points improve but some events move in a negative direction, cover both in separate sentences.
+Write a short paragraph that answers "what happened and what does it mean?" — NOT a list of metrics. Follow this 4-element structure:
 
-Example:
+1. **Trigger** (1 sentence, `[data]`): What change was simulated.
+2. **Outcome** (1 sentence, `[data]`): The main result (points direction + number).
+3. **Trade-off** (0-1 sentence, `[analysis]`): If `display_hints.summary_tradeoff_metric` is provided, use **exactly that metric** for the trade-off sentence. Do not substitute another metric even if it also changes. Do not mention other metrics in this sentence.
+4. **Takeaway** (0-1 sentence, `[analysis]`): A one-sentence overall conclusion about the scenario (e.g. "net positive but with transition costs"). Do not repeat specific numbers from Outcome.
+
+Rules:
+
+- Maximum sentences: `display_hints.summary_max_sentences` (default 4).
+- Do NOT list `highlights` entries here — that is the job of Key Differences.
+- At most 2 numeric values in the entire Summary (points diff + one trade-off metric).
+- When mentioning event changes, use the `direction` from `highlights` — do not guess or reverse.
+
+Example (standard, 4 sentences):
 
 ```
-Mean total points increased by 2.1 over 20 runs. [data]
-Adaptation progress increased by 24.0 per run. [data]
-Tactical confusion decreased by 35.3 per run. [data]
-Form drop increased by 8.4 per run. [data]
-This represents a transition cost of the managerial change. [analysis]
+Manchester United dismissed Van Gaal and appointed Mourinho at week 29. [data]
+Mean total points increased by 2.1 over 20 simulation runs. [data]
+Form drop events increased by 8.4 per run, indicating a short-term adaptation cost. [analysis]
+Overall, the change shows a net positive outcome with transition trade-offs. [analysis]
 ```
 
 ---

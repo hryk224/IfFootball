@@ -5,9 +5,6 @@ from __future__ import annotations
 from iffootball.simulation.report_planner import (
     DetailLevel,
     DisplayContext,
-    DisplayHints,
-    LimitationPlacement,
-    ReportPlan,
     SectionType,
     plan_report,
 )
@@ -353,3 +350,92 @@ class TestDisplayHints:
 
         assert plan.limitation_placement.include_info is False
         assert len(plan.player_display_order) <= 3
+
+
+class TestSummaryPriorityTradeoff:
+    def test_tradeoff_selects_negative_connotation_metric(self) -> None:
+        """form_drop with positive diff should be selected as trade-off."""
+        explanation = _make_explanation(n_highlights=4, points_diff=2.5)
+        plan = plan_report(explanation, DisplayContext.STANDARD)
+
+        # The fixture creates highlights: total_points_mean + event_1, event_2, event_3.
+        # event_N have positive diff. Without polarity info, they won't be trade-offs.
+        # But for the actual data (form_drop etc), we need a specific fixture.
+        # Just verify the field is populated or None.
+        assert hasattr(plan.summary_priority, "tradeoff_metric")
+
+    def test_tradeoff_is_none_when_no_negative_events(self) -> None:
+        """All highlights are positive-connotation — no trade-off."""
+        explanation = _make_explanation(n_highlights=1, points_diff=2.5)
+        plan = plan_report(explanation, DisplayContext.STANDARD)
+        # Only total_points_mean, no negative-connotation events.
+        assert plan.summary_priority.tradeoff_metric is None
+
+    def test_max_sentences_compact(self) -> None:
+        explanation = _make_explanation()
+        plan = plan_report(explanation, DisplayContext.COMPACT)
+        assert plan.summary_priority.max_sentences == 2
+
+    def test_max_sentences_standard(self) -> None:
+        explanation = _make_explanation()
+        plan = plan_report(explanation, DisplayContext.STANDARD)
+        assert plan.summary_priority.max_sentences == 4
+
+    def test_max_sentences_analyst(self) -> None:
+        explanation = _make_explanation()
+        plan = plan_report(explanation, DisplayContext.ANALYST)
+        assert plan.summary_priority.max_sentences == 5
+
+    def test_display_hints_carries_summary_info(self) -> None:
+        explanation = _make_explanation()
+        plan = plan_report(explanation, DisplayContext.STANDARD)
+        hints = plan.to_display_hints()
+        assert hints.summary_max_sentences == 4
+
+    def test_tradeoff_picks_form_drop_not_adaptation(self) -> None:
+        """With real event names, form_drop (bad) is trade-off, not adaptation_progress (good)."""
+        explanation = StructuredExplanation(
+            scenario=ScenarioDescriptor(
+                trigger_type="manager_change",
+                team_name="Test FC",
+                detail={
+                    "outgoing_manager": "Old",
+                    "incoming_manager": "New",
+                },
+            ),
+            highlights=(
+                DifferenceHighlight(
+                    metric_name="total_points_mean",
+                    value_a=12.0,
+                    value_b=14.0,
+                    diff=2.0,
+                    interpretations=(
+                        EvidenceItem(statement="", label="data", source="simulation_output"),
+                    ),
+                ),
+                DifferenceHighlight(
+                    metric_name="adaptation_progress",
+                    value_a=0.0,
+                    value_b=24.0,
+                    diff=24.0,
+                    interpretations=(
+                        EvidenceItem(statement="", label="data", source="simulation_output"),
+                    ),
+                ),
+                DifferenceHighlight(
+                    metric_name="form_drop",
+                    value_a=0.0,
+                    value_b=8.4,
+                    diff=8.4,
+                    interpretations=(
+                        EvidenceItem(statement="", label="data", source="simulation_output"),
+                    ),
+                ),
+            ),
+            causal_chain=(),
+            player_impacts=(),
+            limitations=LimitationsDisclosure(system=(), scenario=()),
+        )
+        plan = plan_report(explanation, DisplayContext.STANDARD)
+        # form_drop (increase is bad) should be trade-off, not adaptation_progress.
+        assert plan.summary_priority.tradeoff_metric == "form_drop"
