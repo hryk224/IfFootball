@@ -125,25 +125,7 @@ def _competition_label(target: dict[str, Any]) -> str:
 # Incoming manager profile
 # ---------------------------------------------------------------------------
 
-
-def _build_incoming_profile(name: str) -> ManagerAgent:
-    """Build a ManagerAgent stub for the incoming manager.
-
-    Uses neutral defaults for StatsBomb-derived attributes since we
-    don't have the incoming manager's historical data. The profile
-    is used for tactical estimate display in the radar chart.
-    """
-    return ManagerAgent(
-        manager_name=name,
-        team_name="",
-        competition_id=0,
-        season_id=0,
-        tenure_match_ids=frozenset(),
-        pressing_intensity=50.0,
-        possession_preference=0.5,
-        counter_tendency=0.5,
-        preferred_formation="4-4-2",
-    )
+from iffootball.incoming_profile import resolve_incoming_profile  # noqa: E402
 
 
 def _build_transfer_trigger(params: SimulationParams) -> TransferInTrigger:
@@ -525,7 +507,12 @@ def _run_pipeline(params: SimulationParams) -> bool:
     if params.trigger_type == "transfer_in":
         trigger = _build_transfer_trigger(params)
     else:
-        incoming_profile = _build_incoming_profile(params.incoming_manager_name)
+        incoming_profile = resolve_incoming_profile(
+            params.incoming_manager_name,
+            params.competition_id,
+            params.season_id,
+            cache_dir=_CACHE_DIR,
+        )
         trigger = ManagerChangeTrigger(
             outgoing_manager_name=params.manager_name,
             incoming_manager_name=params.incoming_manager_name,
