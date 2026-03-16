@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from iffootball.llm.report_adapter import structured_to_report_input
+from iffootball.simulation.report_planner import DisplayContext, plan_report
 from iffootball.simulation.structured_explanation import (
     SYSTEM_LIMITATIONS,
     CausalStep,
@@ -218,6 +219,49 @@ class TestStructuredToReportInput:
         assert len(ri.limitations) >= 6
         # At least one contains Japanese text.
         assert any("シミュレート" in lim for lim in ri.limitations)
+
+    def test_plan_adds_display_hints(self) -> None:
+        exp = _make_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.display_hints is not None
+        assert "summary" in ri.display_hints.section_order
+        assert len(ri.display_hints.featured_players) <= 3
+        assert ri.display_hints.show_limitations_info is False
+
+    def test_plan_filters_players(self) -> None:
+        exp = _make_explanation()
+        plan = plan_report(exp, DisplayContext.COMPACT)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        # Compact limits to 1 player.
+        assert len(ri.player_impacts) == 1
+
+    def test_plan_analyst_includes_info_limitations(self) -> None:
+        exp = _make_explanation()
+        plan = plan_report(exp, DisplayContext.ANALYST)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10, lang="en")
+
+        # Analyst includes info-severity limitations.
+        # System (5) + scenario warning (1) + scenario info would be included.
+        # The fixture has 1 scenario warning. No scenario info in _make_explanation.
+        # But plan.include_info = True, so the filter allows info items.
+        assert ri.display_hints is not None
+        assert ri.display_hints.show_limitations_info is True
+
+    def test_no_plan_gives_none_display_hints(self) -> None:
+        ri = structured_to_report_input(_make_explanation(), n_runs=10)
+        assert ri.display_hints is None
+
+    def test_plan_preserves_step_ids_in_hints(self) -> None:
+        exp = _make_explanation()
+        plan = plan_report(exp, DisplayContext.STANDARD)
+        ri = structured_to_report_input(exp, plan=plan, n_runs=10)
+
+        assert ri.display_hints is not None
+        assert ri.display_hints.expanded_step_ids == plan.expanded_step_ids
+        assert ri.display_hints.collapsed_step_ids == plan.collapsed_step_ids
 
     def test_empty_explanation(self) -> None:
         exp = StructuredExplanation(

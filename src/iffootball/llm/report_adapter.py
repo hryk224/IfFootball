@@ -22,12 +22,14 @@ from iffootball.llm.report_generation import (
     PlayerImpactEntry,
     ReportInput,
 )
+from iffootball.simulation.report_planner import ReportPlan
 from iffootball.simulation.structured_explanation import StructuredExplanation
 
 
 def structured_to_report_input(
     explanation: StructuredExplanation,
     *,
+    plan: ReportPlan | None = None,
     limitations: list[str] | None = None,
     n_runs: int = 1,
     lang: str = "en",
@@ -36,6 +38,11 @@ def structured_to_report_input(
 
     Extracts the data needed by the existing report generation pipeline
     from the structured explanation.
+
+    When a ReportPlan is provided, its decisions are preserved as
+    DisplayHints in the returned ReportInput. The plan also controls:
+        - Player ordering and count (featured_players).
+        - Limitation visibility (include_info filter).
 
     Semantic notes:
         - action_explanations is always empty. CausalStep data does not
@@ -50,6 +57,9 @@ def structured_to_report_input(
 
     Args:
         explanation: Completed StructuredExplanation.
+        plan:        ReportPlan from plan_report(). If provided,
+                     DisplayHints are included and player/limitation
+                     filtering is applied.
         limitations: Override limitations list. If None, extracts
                      from StructuredExplanation.limitations.
         n_runs:      Number of simulation runs (not stored in
@@ -90,34 +100,14 @@ def structured_to_report_input(
         else:
             cascade_diff[hl.metric_name] = hl.diff
 
-    # Build player impact entries.
-    player_impacts: list[PlayerImpactEntry] = []
-    for pi in explanation.player_impacts:
-        diffs = {c.axis: c.diff for c in pi.changes}
-        player_impacts.append(
-            PlayerImpactEntry(
-                player_name=pi.player_name,
-                impact_score=pi.impact_score,
-                form_diff=diffs.get("form", 0.0),
-                fatigue_diff=diffs.get("fatigue", 0.0),
-                understanding_diff=diffs.get("understanding", 0.0),
-                trust_diff=diffs.get("trust", 0.0),
-            )
-        )
+    # Build player impact entries, respecting plan order if provided.
+    player_impacts = _build_player_impacts(explanation, plan)
 
-    # Limitations: system (always) + scenario warnings.
-    if limitations is not None:
-        resolved_limitations = limitations
-    else:
-        msg_attr = "message_ja" if lang == "ja" else "message_en"
-        resolved_limitations = [
-            getattr(item, msg_attr)
-            for item in explanation.limitations.system
-        ] + [
-            getattr(item, msg_attr)
-            for item in explanation.limitations.scenario
-            if item.severity == "warning"
-        ]
+    # Limitations: respect plan's include_info setting.
+    resolved_limitations = _resolve_limitations(explanation, plan, limitations, lang)
+
+    # Display hints from plan.
+    display_hints = plan.to_display_hints() if plan is not None else None
 
     return ReportInput(
         trigger_description=trigger_desc,
@@ -129,4 +119,62 @@ def structured_to_report_input(
         player_impacts=player_impacts,
         action_explanations=[],  # CausalStep does not map to this contract.
         limitations=resolved_limitations,
+        display_hints=display_hints,
     )
+
+
+def _build_player_impacts(
+    explanation: StructuredExplanation,
+    plan: ReportPlan | None,
+) -> list[PlayerImpactEntry]:
+    """Build player impact entries, filtered and ordered by plan."""
+    if plan is not None:
+        ordered_names = plan.player_display_order
+    else:
+        ordered_names = tuple(pi.player_name for pi in explanation.player_impacts)
+
+    # Index by name for O(1) lookup.
+    impacts_by_name = {pi.player_name: pi for pi in explanation.player_impacts}
+
+    entries: list[PlayerImpactEntry] = []
+    for name in ordered_names:
+        pi = impacts_by_name.get(name)
+        if pi is None:
+            continue
+        diffs = {c.axis: c.diff for c in pi.changes}
+        entries.append(
+            PlayerImpactEntry(
+                player_name=pi.player_name,
+                impact_score=pi.impact_score,
+                form_diff=diffs.get("form", 0.0),
+                fatigue_diff=diffs.get("fatigue", 0.0),
+                understanding_diff=diffs.get("understanding", 0.0),
+                trust_diff=diffs.get("trust", 0.0),
+            )
+        )
+
+    return entries
+
+
+def _resolve_limitations(
+    explanation: StructuredExplanation,
+    plan: ReportPlan | None,
+    override: list[str] | None,
+    lang: str,
+) -> list[str]:
+    """Resolve limitations list, respecting plan's include_info setting."""
+    if override is not None:
+        return override
+
+    include_info = plan.limitation_placement.include_info if plan is not None else False
+    msg_attr = "message_ja" if lang == "ja" else "message_en"
+
+    items: list[str] = [
+        getattr(item, msg_attr) for item in explanation.limitations.system
+    ]
+
+    for item in explanation.limitations.scenario:
+        if item.severity == "warning" or (include_info and item.severity == "info"):
+            items.append(getattr(item, msg_attr))
+
+    return items

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from iffootball.llm.client import LLMClient
+from iffootball.simulation.report_planner import DisplayHints
 
 # ---------------------------------------------------------------------------
 # Prompt loading
@@ -51,22 +52,37 @@ def _load_system_prompt(path: Path | None = None, lang: str = "en") -> str:
 # Constants
 # ---------------------------------------------------------------------------
 
-# Required section headings per language.
+# Section type -> heading per language.
+_SECTION_HEADINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "summary": "## Summary",
+        "key_differences": "## Key Differences",
+        "causal_chain": "## Causal Chain",
+        "player_impact": "## Player Impact",
+        "limitations": "## Limitations",
+    },
+    "ja": {
+        "summary": "## サマリー",
+        "key_differences": "## 主な差分",
+        "causal_chain": "## 因果連鎖",
+        "player_impact": "## 選手への影響",
+        "limitations": "## 制約事項",
+    },
+}
+
+# Default section order (all sections).
+_DEFAULT_SECTION_ORDER: tuple[str, ...] = (
+    "summary",
+    "key_differences",
+    "causal_chain",
+    "player_impact",
+    "limitations",
+)
+
+# Required section headings per language (backward compat).
 REQUIRED_SECTIONS: dict[str, tuple[str, ...]] = {
-    "en": (
-        "## Summary",
-        "## Key Differences",
-        "## Causal Chain",
-        "## Player Impact",
-        "## Limitations",
-    ),
-    "ja": (
-        "## サマリー",
-        "## 主な差分",
-        "## 因果連鎖",
-        "## 選手への影響",
-        "## 制約事項",
-    ),
+    lang: tuple(headings.values())
+    for lang, headings in _SECTION_HEADINGS.items()
 }
 
 # Default limitations describing known simulation constraints.
@@ -100,34 +116,47 @@ DEFAULT_LIMITATIONS: dict[str, tuple[str, ...]] = {
 # Default number of top impacted players to include.
 DEFAULT_TOP_PLAYERS = 3
 
-# Fallback report when LLM output is empty or unusable.
-_FALLBACK_REPORTS: dict[str, str] = {
-    "en": (
-        "## Summary\n\n"
-        "Unable to generate structured report.\n\n"
-        "## Key Differences\n\n"
-        "No data available.\n\n"
-        "## Causal Chain\n\n"
-        "No data available.\n\n"
-        "## Player Impact\n\n"
-        "No data available.\n\n"
-        "## Limitations\n\n"
-        "Report generation failed. Results may be incomplete."
-    ),
-    "ja": (
-        "## サマリー\n\n"
-        "構造化レポートを生成できませんでした。\n\n"
-        "## 主な差分\n\n"
-        "データがありません。\n\n"
-        "## 因果連鎖\n\n"
-        "データがありません。\n\n"
-        "## 選手への影響\n\n"
-        "データがありません。\n\n"
-        "## 制約事項\n\n"
-        "レポート生成に失敗しました。結果が不完全な可能性があります。"
-    ),
+# Fallback body text per section per language.
+_FALLBACK_BODY: dict[str, dict[str, str]] = {
+    "en": {
+        "summary": "Unable to generate structured report.",
+        "key_differences": "No data available.",
+        "causal_chain": "No data available.",
+        "player_impact": "No data available.",
+        "limitations": "Report generation failed. Results may be incomplete.",
+    },
+    "ja": {
+        "summary": "構造化レポートを生成できませんでした。",
+        "key_differences": "データがありません。",
+        "causal_chain": "データがありません。",
+        "player_impact": "データがありません。",
+        "limitations": "レポート生成に失敗しました。結果が不完全な可能性があります。",
+    },
 }
-_FALLBACK_REPORT = _FALLBACK_REPORTS["en"]  # backward compat alias
+
+
+def _build_fallback(
+    lang: str = "en",
+    section_order: tuple[str, ...] | None = None,
+) -> str:
+    """Build a fallback report respecting the section order."""
+    order = section_order or _DEFAULT_SECTION_ORDER
+    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    bodies = _FALLBACK_BODY.get(lang, _FALLBACK_BODY["en"])
+    parts: list[str] = []
+    for section in order:
+        heading = headings.get(section)
+        body = bodies.get(section, "No data available.")
+        if heading:
+            parts.append(f"{heading}\n\n{body}")
+    return "\n\n".join(parts)
+
+
+# Backward compat aliases.
+_FALLBACK_REPORTS: dict[str, str] = {
+    lang: _build_fallback(lang) for lang in _SECTION_HEADINGS
+}
+_FALLBACK_REPORT = _FALLBACK_REPORTS["en"]
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +236,7 @@ class ReportInput:
     player_impacts: list[PlayerImpactEntry]
     action_explanations: list[ActionExplanationEntry]
     limitations: list[str]
+    display_hints: DisplayHints | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +264,12 @@ def generate_report(
         structured fallback report if the LLM output is empty or
         missing required section headings.
     """
-    fallback = _FALLBACK_REPORTS.get(lang, _FALLBACK_REPORT)
+    # Determine active sections from display_hints or default.
+    section_order: tuple[str, ...] | None = None
+    if report_input.display_hints is not None:
+        section_order = report_input.display_hints.section_order
+
+    fallback = _build_fallback(lang=lang, section_order=section_order)
 
     prompt = (
         system_prompt
@@ -256,7 +291,7 @@ def generate_report(
 
     report = raw.strip()
 
-    if not _has_required_sections(report, lang=lang):
+    if not _has_required_sections(report, lang=lang, section_order=section_order):
         return fallback
 
     # Strip any quality notes or meta-commentary the LLM may have added.
@@ -272,7 +307,7 @@ def generate_report(
 
 def _build_payload(report_input: ReportInput) -> dict[str, Any]:
     """Build the JSON payload for the user message."""
-    return {
+    payload: dict[str, Any] = {
         "trigger_description": report_input.trigger_description,
         "points_mean_a": round(report_input.points_mean_a, 2),
         "points_mean_b": round(report_input.points_mean_b, 2),
@@ -305,6 +340,15 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
         ],
         "limitations": report_input.limitations,
     }
+    if report_input.display_hints is not None:
+        payload["display_hints"] = {
+            "section_order": list(report_input.display_hints.section_order),
+            "expanded_step_ids": sorted(report_input.display_hints.expanded_step_ids),
+            "collapsed_step_ids": sorted(report_input.display_hints.collapsed_step_ids),
+            "featured_players": list(report_input.display_hints.featured_players),
+            "show_limitations_info": report_input.display_hints.show_limitations_info,
+        }
+    return payload
 
 
 def _strip_quality_notes(report: str) -> str:
@@ -326,10 +370,23 @@ def _strip_quality_notes(report: str) -> str:
     return "\n".join(lines)
 
 
-def _has_required_sections(report: str, lang: str = "en") -> bool:
-    """Check that the report contains all required section headings."""
-    sections = REQUIRED_SECTIONS.get(lang, REQUIRED_SECTIONS["en"])
-    for heading in sections:
+def _has_required_sections(
+    report: str,
+    lang: str = "en",
+    section_order: tuple[str, ...] | None = None,
+) -> bool:
+    """Check that the report contains expected section headings.
+
+    When section_order is provided (from DisplayHints), only those
+    sections are required. Otherwise all default sections are required.
+    """
+    headings = _SECTION_HEADINGS.get(lang, _SECTION_HEADINGS["en"])
+    if section_order is not None:
+        required = [headings[s] for s in section_order if s in headings]
+    else:
+        required = list(headings.values())
+
+    for heading in required:
         if heading not in report:
             return False
     return True
