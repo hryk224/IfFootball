@@ -55,7 +55,6 @@ htmlcov/
 
 # Node.js
 node_modules/
-package-lock.json
 
 # Backtest / simulation output
 output/
