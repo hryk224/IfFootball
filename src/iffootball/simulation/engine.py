@@ -60,6 +60,7 @@ from iffootball.simulation.cascade_tracker import CascadeEvent, CascadeTracker
 from iffootball.simulation.lineup_selection import select_lineup
 from iffootball.simulation.match_result import MatchResult, simulate_match
 from iffootball.simulation.state_update import (
+    update_current_form,
     update_fatigue,
     update_job_security,
     update_manager_trust,
@@ -192,6 +193,11 @@ class Simulation:
 
             # 4. Fatigue update
             update_fatigue(self._squad, starter_ids, self._rules)
+
+            # 4b. Current form update (team result momentum)
+            update_current_form(
+                self._squad, starter_ids, result.points_earned, self._rules
+            )
 
             # 5. Tactical understanding update
             update_tactical_understanding(
@@ -364,15 +370,16 @@ class Simulation:
             # Record cascade events and apply state effects.
             if action == "resist":
                 resist_count += 1
-                # Form drops and trust declines.
-                player.current_form = max(0.0, player.current_form - 0.05)
+                # Form drops (config-driven) and trust declines.
+                form_penalty = self._rules.adaptation.form_drop_on_resist
+                player.current_form = max(0.0, player.current_form - form_penalty)
                 player.manager_trust = max(0.0, player.manager_trust - 0.03)
                 form_event = tracker.record(
                     week=week,
                     event_type="form_drop",
                     affected_agent=player.player_name,
                     cause_chain=tuple(tps),
-                    magnitude=0.3,
+                    magnitude=round(form_penalty, 4),
                     depth=1,
                 )
                 if form_event is not None:

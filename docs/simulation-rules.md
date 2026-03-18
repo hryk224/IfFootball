@@ -20,6 +20,9 @@ These parameters control weekly state updates for players during the simulation.
 | `fatigue_penalty_weight`      | 0.5   | 0.0–1.0 | How much fatigue reduces the agent state factor in match result calculation |
 | `trust_increase_on_start`     | 0.02  | 0.0–1.0 | Manager trust increase when selected as starter                             |
 | `trust_decrease_on_bench`     | 0.01  | 0.0–1.0 | Manager trust decrease when benched                                         |
+| `form_boost_on_win`           | 0.06  | 0.0–1.0 | Form increase for starters after a win                                      |
+| `form_drop_on_loss`           | 0.04  | 0.0–1.0 | Form decrease for starters after a loss                                     |
+| `form_drop_on_resist`         | 0.05  | 0.0–1.0 | Form decrease when a player samples "resist" action                         |
 
 ### Rationale
 
@@ -27,6 +30,8 @@ These parameters control weekly state updates for players during the simulation.
 - **tactical_understanding_gain:** At 0.04 per week with neutral adaptation rate, a player reaches ~0.75 understanding after ~6 matches post-appointment. This reflects a realistic mid-season adaptation window. [Developer judgement]
 - **fatigue_penalty_weight:** At 0.5, a fully fatigued player (1.0) reduces the agent state factor by 50%. This makes squad rotation important without making fatigue catastrophic. [Developer judgement]
 - **trust_increase/decrease:** Asymmetric (0.02 vs 0.01) to reflect that trust builds faster through selection than it erodes through benching. A starter for 10 consecutive matches gains ~0.2 trust. [Developer judgement]
+- **form_boost_on_win / form_drop_on_loss:** Form represents recent team-result momentum. Starters gain +0.06 on a win and lose -0.04 on a loss; draws have no effect. Non-starters keep their current form unchanged. Over 9 matches with a 5W-2D-2L record, a starter's form rises from 0.5 to ~0.72. All values are provisional estimates subject to calibration. [Developer judgement, no empirical calibration yet]
+- **form_drop_on_resist:** When a player samples "resist" at a turning point, form drops by 0.05. This is separate from the match-result update and fires only during TP processing. [Developer judgement]
 
 ---
 

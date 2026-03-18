@@ -144,6 +144,9 @@ def _make_rules() -> SimulationRules:
             fatigue_penalty_weight=0.5,
             trust_increase_on_start=0.02,
             trust_decrease_on_bench=0.01,
+            form_boost_on_win=0.06,
+            form_drop_on_loss=0.04,
+            form_drop_on_resist=0.05,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(

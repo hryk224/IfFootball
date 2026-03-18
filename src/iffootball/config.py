@@ -46,6 +46,12 @@ class AdaptationConfig:
                                      as starter (0.0-1.0).
         trust_decrease_on_bench:    manager_trust decrease when benched
                                      (0.0-1.0).
+        form_boost_on_win:          current_form increase for starters
+                                     after a win (0.0-1.0).
+        form_drop_on_loss:          current_form decrease for starters
+                                     after a loss (0.0-1.0).
+        form_drop_on_resist:        current_form decrease when a player
+                                     samples "resist" action (0.0-1.0).
     """
 
     base_fatigue_increase: float
@@ -54,6 +60,9 @@ class AdaptationConfig:
     fatigue_penalty_weight: float
     trust_increase_on_start: float
     trust_decrease_on_bench: float
+    form_boost_on_win: float
+    form_drop_on_loss: float
+    form_drop_on_resist: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -85,6 +94,21 @@ class AdaptationConfig:
             raise ValueError(
                 f"trust_decrease_on_bench must be in [0.0, 1.0], "
                 f"got {self.trust_decrease_on_bench}"
+            )
+        if not 0.0 <= self.form_boost_on_win <= 1.0:
+            raise ValueError(
+                f"form_boost_on_win must be in [0.0, 1.0], "
+                f"got {self.form_boost_on_win}"
+            )
+        if not 0.0 <= self.form_drop_on_loss <= 1.0:
+            raise ValueError(
+                f"form_drop_on_loss must be in [0.0, 1.0], "
+                f"got {self.form_drop_on_loss}"
+            )
+        if not 0.0 <= self.form_drop_on_resist <= 1.0:
+            raise ValueError(
+                f"form_drop_on_resist must be in [0.0, 1.0], "
+                f"got {self.form_drop_on_resist}"
             )
 
 
@@ -317,6 +341,9 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
         fatigue_penalty_weight=float(data["fatigue_penalty_weight"]),
         trust_increase_on_start=float(data["trust_increase_on_start"]),
         trust_decrease_on_bench=float(data["trust_decrease_on_bench"]),
+        form_boost_on_win=float(data["form_boost_on_win"]),
+        form_drop_on_loss=float(data["form_drop_on_loss"]),
+        form_drop_on_resist=float(data["form_drop_on_resist"]),
     )
 
 

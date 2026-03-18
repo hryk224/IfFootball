@@ -23,3 +23,12 @@ fatigue_penalty_weight = 0.5
 # manager_trust change per week (0.0-1.0 scale).
 trust_increase_on_start = 0.02
 trust_decrease_on_bench = 0.01
+
+# current_form update (0.0-1.0 scale).
+# Form represents recent team-result momentum. Updated for starters only;
+# non-starters keep their current form unchanged.
+# Draws have no effect on form. All values are provisional estimates.
+form_boost_on_win = 0.06
+form_drop_on_loss = 0.04
+# Form penalty when a player samples "resist" action at a turning point.
+form_drop_on_resist = 0.05

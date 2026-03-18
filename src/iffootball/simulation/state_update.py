@@ -50,6 +50,46 @@ def update_fatigue(
 
 
 # ---------------------------------------------------------------------------
+# Step 4b: Current form update
+# ---------------------------------------------------------------------------
+
+
+def update_current_form(
+    squad: list[PlayerAgent],
+    starter_ids: set[int],
+    points_earned: int,
+    rules: SimulationRules,
+) -> None:
+    """Update current_form for starters based on match result.
+
+    Starters gain form on a win and lose form on a loss. Draws have no
+    effect. Non-starters keep their current form unchanged.
+
+    Form represents recent team-result momentum: "winning lifts
+    confidence, losing erodes it". It does NOT overlap with trust
+    (manager's selection preference) or fatigue (physical load).
+
+    Form is clamped to [0.0, 1.0].
+
+    Args:
+        squad:         All players in the squad.
+        starter_ids:   player_id set of players who started this week.
+        points_earned: Points from this match (3=win, 1=draw, 0=loss).
+        rules:         Simulation rules config.
+    """
+    if points_earned == 3:
+        delta = rules.adaptation.form_boost_on_win
+    elif points_earned == 0:
+        delta = -rules.adaptation.form_drop_on_loss
+    else:
+        return  # Draw: no form change.
+
+    for p in squad:
+        if p.player_id in starter_ids:
+            p.current_form = max(0.0, min(1.0, p.current_form + delta))
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Tactical understanding update
 # ---------------------------------------------------------------------------
 
