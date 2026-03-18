@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from iffootball.agents.player import PlayerAgent
+from iffootball.agents.player import PlayerAgent, SampleTier
 from iffootball.simulation.comparison import ComparisonResult
 from iffootball.simulation.engine import SimulationResult
 
@@ -33,6 +33,9 @@ class PlayerImpact:
         player_id:   Unique player identifier (used for matching across runs).
         player_name: Display name.
         impact_score: Mean absolute dynamic-state difference across runs.
+        sample_tier: Data confidence tier from PlayerAgent. PARTIAL tier
+                     players have fallback attributes and should be annotated
+                     when appearing in reports/explanations.
         mean_form_a:  Mean final form in Branch A.
         mean_form_b:  Mean final form in Branch B.
         mean_fatigue_a:  Mean final fatigue in Branch A.
@@ -54,6 +57,7 @@ class PlayerImpact:
     mean_understanding_b: float
     mean_trust_a: float
     mean_trust_b: float
+    sample_tier: SampleTier = SampleTier.FULL
 
 
 def _player_impact_per_run(
@@ -135,9 +139,12 @@ def rank_player_impact(
         for pid, score in per_run.items():
             accumulated[pid] = accumulated.get(pid, 0.0) + score
 
-    # Average and collect player names.
+    # Average and collect player names / sample tier.
     name_map: dict[int, str] = {
         p.player_id: p.player_name for p in runs_a[0].final_squad
+    }
+    tier_map: dict[int, SampleTier] = {
+        p.player_id: p.sample_tier for p in runs_a[0].final_squad
     }
 
     scored: list[tuple[int, float]] = [
@@ -153,6 +160,7 @@ def rank_player_impact(
                 player_id=pid,
                 player_name=name_map.get(pid, f"Player {pid}"),
                 impact_score=impact,
+                sample_tier=tier_map.get(pid, SampleTier.FULL),
                 mean_form_a=_mean_state(runs_a, pid, "current_form"),
                 mean_form_b=_mean_state(runs_b, pid, "current_form"),
                 mean_fatigue_a=_mean_state(runs_a, pid, "fatigue"),

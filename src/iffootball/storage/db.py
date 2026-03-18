@@ -60,7 +60,7 @@ from typing import Any
 from iffootball.agents.fixture import Fixture, FixtureList, OpponentStrength
 from iffootball.agents.league import LeagueContext
 from iffootball.agents.manager import ManagerAgent
-from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
+from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily, SampleTier
 from iffootball.agents.team import TeamBaseline
 from iffootball.simulation.cascade_tracker import CascadeEvent
 from iffootball.simulation.comparison import (
@@ -123,7 +123,9 @@ class ComparisonResultWithMeta:
 #       cascade_runs header table, comparison_results metadata NOT NULL.
 #   3 — Paired comparison: rng_policy column on comparison_results
 #       to identify the RNG allocation strategy (e.g. paired_split_v1).
-_SCHEMA_VERSION = 3
+#   4 — Squad coverage: sample_tier column on player_agents to distinguish
+#       FULL (percentile-normalised) from PARTIAL (fallback attributes).
+_SCHEMA_VERSION = 4
 
 
 class SchemaVersionError(Exception):
@@ -163,6 +165,7 @@ CREATE TABLE IF NOT EXISTS player_agents (
     tactical_understanding REAL   NOT NULL CHECK(tactical_understanding >= 0 AND tactical_understanding <= 1),
     manager_trust         REAL    NOT NULL CHECK(manager_trust >= 0 AND manager_trust <= 1),
     bench_streak          INTEGER NOT NULL CHECK(bench_streak >= 0),
+    sample_tier           TEXT    NOT NULL DEFAULT 'full',
     PRIMARY KEY (player_id, competition_id, season_id)
 );
 
@@ -483,12 +486,13 @@ class Database:
                 a.tactical_adaptability, a.leadership, a.pressure_resistance,
                 a.current_form, a.fatigue, a.tactical_understanding,
                 a.manager_trust, a.bench_streak,
+                a.sample_tier.value,
             )
             for a in agents
         ]
         self._conn.executemany(
             """
-            INSERT INTO player_agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO player_agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(player_id, competition_id, season_id) DO UPDATE SET
                 player_name=excluded.player_name,
                 position_name=excluded.position_name,
@@ -504,7 +508,8 @@ class Database:
                 current_form=excluded.current_form, fatigue=excluded.fatigue,
                 tactical_understanding=excluded.tactical_understanding,
                 manager_trust=excluded.manager_trust,
-                bench_streak=excluded.bench_streak
+                bench_streak=excluded.bench_streak,
+                sample_tier=excluded.sample_tier
             """,
             rows,
         )
@@ -542,6 +547,7 @@ class Database:
                 tactical_understanding=float(r["tactical_understanding"]),
                 manager_trust=float(r["manager_trust"]),
                 bench_streak=int(r["bench_streak"]),
+                sample_tier=SampleTier(r["sample_tier"]),
             )
             for r in rows
         ]

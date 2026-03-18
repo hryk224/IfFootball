@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
+from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily, SampleTier
 
 # ---------------------------------------------------------------------------
 # Position mapping constants
@@ -122,6 +122,7 @@ def to_broad_position(role_family: RoleFamily) -> BroadPosition:
 
 _MINUTES_PER_MATCH = 90.0
 _MIN_MINUTES_THRESHOLD = 900.0
+_PARTIAL_MINUTES_THRESHOLD = 270.0  # 3 full matches; minimum for position data
 
 # Minimum matches with xG data to compute consistency from variance.
 # Players below this threshold keep the neutral 50.0 placeholder.
@@ -481,7 +482,17 @@ def build_player_agents(
     events: pd.DataFrame,
     lineups: dict[str, pd.DataFrame],
 ) -> list[PlayerAgent]:
-    """Build PlayerAgent instances for all qualified players.
+    """Build PlayerAgent instances for qualified and partial players.
+
+    Two tiers of players are included:
+      - FULL (>= 900 min): percentile-normalised attributes from stats.
+      - PARTIAL (270-899 min): neutral fallback attributes (50.0 for all
+        technical metrics). Present for scenario naturalness but with
+        limited data confidence.
+
+    Players below 270 minutes or without a lineup entry are excluded.
+    This is a structural limitation of StatsBomb Open Data: players with
+    no event-level appearance data cannot be included.
 
     Args:
         events: Combined match events DataFrame with columns including
@@ -493,14 +504,16 @@ def build_player_agents(
                  players with no lineup entry are skipped.
 
     Returns:
-        List of PlayerAgent instances for players with >= 900 minutes played.
+        List of PlayerAgent instances (FULL + PARTIAL tier).
 
     Raises:
-        ValueError: if a qualified player has no position data in events,
-                    or if their representative position is not in SUPPORTED_POSITION_NAMES.
+        ValueError: if a FULL tier player has no position data in events,
+                    or if their representative position is not in
+                    SUPPORTED_POSITION_NAMES.
     """
     raw_stats = aggregate_player_stats(events)
     representative_positions = _derive_representative_positions(events)
+    minutes = calc_minutes_played(events)
 
     # Build position map for group-level consistency.
     position_map: dict[int, BroadPosition] = {}
@@ -512,6 +525,7 @@ def build_player_agents(
             pass  # Unknown position; will be caught later in agent construction.
 
     normalised = normalize_percentile(raw_stats, position_map=position_map)
+    normalised_pids: set[int] = set(int(pid) for pid in normalised.index)
 
     # Build player_id -> player_name from lineups (identity source).
     player_names: dict[int, str] = {}
@@ -520,6 +534,8 @@ def build_player_agents(
             player_names[int(row["player_id"])] = str(row["player_name"])
 
     agents: list[PlayerAgent] = []
+
+    # --- FULL tier: >= 900 min, percentile-normalised ---
     for player_id, stats_row in normalised.iterrows():
         pid = int(player_id)  # type: ignore[call-overload]
         if pid not in player_names:
@@ -548,6 +564,44 @@ def build_player_agents(
                 defending=attrs["defending"],
                 physicality=attrs["physicality"],
                 consistency=attrs["consistency"],
+                sample_tier=SampleTier.FULL,
             )
         )
+
+    # --- PARTIAL tier: 270-899 min, neutral fallback ---
+    _NEUTRAL = 50.0
+    for pid_raw, player_minutes in minutes.items():
+        pid = int(pid_raw)  # type: ignore[call-overload]
+        if pid in normalised_pids:
+            continue  # Already included as FULL tier.
+        if player_minutes < _PARTIAL_MINUTES_THRESHOLD:
+            continue  # Below partial threshold.
+        if pid not in player_names:
+            continue  # No lineup entry.
+        position_name = representative_positions.get(pid)
+        if position_name is None:
+            continue  # No position data; skip silently for partial tier.
+        try:
+            role = to_role_family(position_name)
+            broad = to_broad_position(role)
+        except ValueError:
+            continue  # Unsupported position; skip silently for partial tier.
+        agents.append(
+            PlayerAgent(
+                player_id=pid,
+                player_name=player_names[pid],
+                position_name=position_name,
+                role_family=role,
+                broad_position=broad,
+                pace=_NEUTRAL,
+                passing=_NEUTRAL,
+                shooting=_NEUTRAL,
+                pressing=_NEUTRAL,
+                defending=_NEUTRAL,
+                physicality=_NEUTRAL,
+                consistency=_NEUTRAL,
+                sample_tier=SampleTier.PARTIAL,
+            )
+        )
+
     return agents

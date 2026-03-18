@@ -17,6 +17,23 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
+class SampleTier(str, Enum):
+    """Data confidence tier based on player minutes played.
+
+    Controls how player attributes were derived and signals downstream
+    consumers (reports, explanations) about data reliability.
+
+    Values:
+        FULL:    900+ minutes. Percentile-normalised from full statistical sample.
+        PARTIAL: 270-899 minutes. Fallback neutral attributes (50.0 for all
+                 technical metrics). Present in squad for scenario naturalness
+                 but should be annotated when appearing in outputs.
+    """
+
+    FULL = "full"
+    PARTIAL = "partial"
+
+
 class BroadPosition(str, Enum):
     """Coarse 4-category position classification for simple simulation rules."""
 
@@ -63,6 +80,11 @@ class PlayerAgent:
 
         Technical attributes (percentile 0–100, relative to players with ≥900 min):
             pace, passing, shooting, pressing, defending, physicality, consistency
+            For PARTIAL tier players (270-899 min), all technical attributes are
+            set to 50.0 (league median fallback).
+
+        sample_tier: Data confidence tier (FULL or PARTIAL). Controls how
+            attributes were derived and signals downstream about reliability.
 
         Adaptation attributes (fixed placeholder values for M1):
             tactical_adaptability, leadership, pressure_resistance
@@ -90,6 +112,9 @@ class PlayerAgent:
     tactical_adaptability: float = field(default=50.0)
     leadership: float = field(default=50.0)
     pressure_resistance: float = field(default=50.0)
+
+    # Data confidence tier — indicates how attributes were derived.
+    sample_tier: SampleTier = field(default=SampleTier.FULL)
 
     # Dynamic state — initialised to neutral; updated each match simulation step.
     # Scale: 0.0-1.0 (fatigue and dynamic attributes).
