@@ -219,7 +219,7 @@ class Simulation:
                 manager=self._manager,
                 recent_points=tuple(recent),
             )
-            self._process_player_turning_points(context, tracker, week)
+            self._process_player_turning_points(context, tracker, week, starter_ids)
             self._process_manager_turning_points(tracker, week)
 
             # Advance matches_since_appointment
@@ -353,18 +353,21 @@ class Simulation:
         context: SimContext,
         tracker: CascadeTracker,
         week: int,
+        starter_ids: set[int],
     ) -> None:
         """Detect player TPs, sample actions, apply effects, record events."""
         resist_count = 0
 
         for player in self._squad:
             tps = detect_player_turning_points(
-                player, context, self._rules
+                player, context, self._rules,
+                is_starter=player.player_id in starter_ids,
             )
             if not tps:
                 continue
 
-            dist = self._handler.handle(player, context)
+            is_starter = player.player_id in starter_ids
+            dist = self._handler.handle(player, context, is_starter=is_starter)
             action = self._sample_action(dist)
 
             # Record cascade events and apply state effects.

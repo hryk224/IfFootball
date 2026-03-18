@@ -642,7 +642,9 @@ class TestCascadeEventEmission:
         # seed=0 deterministically produces 6 resists → squad_unrest.
         sim._action_rng = np.random.default_rng(0)
         tracker = CascadeTracker()
-        sim._process_player_turning_points(context, tracker, 11)
+        # All players treated as starters for this test.
+        all_ids = {p.player_id for p in sim._squad}
+        sim._process_player_turning_points(context, tracker, 11, all_ids)
         unrest = [e for e in tracker.events if e.event_type == "squad_unrest"]
         assert len(unrest) == 1
         assert unrest[0].cause_chain == ("multiple_resist",)

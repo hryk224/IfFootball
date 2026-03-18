@@ -97,7 +97,8 @@ class TurningPointHandler(Protocol):
     """
 
     def handle(
-        self, agent: PlayerAgent, context: SimContext
+        self, agent: PlayerAgent, context: SimContext,
+        *, is_starter: bool = True,
     ) -> ActionDistribution: ...
 
 
@@ -110,6 +111,8 @@ def detect_player_turning_points(
     player: PlayerAgent,
     context: SimContext,
     rules: SimulationRules,
+    *,
+    is_starter: bool = True,
 ) -> list[str]:
     """Detect active turning points for a player.
 
@@ -120,6 +123,17 @@ def detect_player_turning_points(
         "bench_streak":      bench_streak >= bench_streak_threshold
         "low_understanding": tactical_understanding below threshold
                              AND within short_term_window of appointment
+                             AND player is a starter this week.
+                             Benched players still experience low
+                             understanding but do not trigger the
+                             behavioural response (resist/adapt/transfer).
+
+    Args:
+        player:     The player to evaluate.
+        context:    Current simulation context.
+        rules:      Simulation rules config.
+        is_starter: Whether the player started this week's match.
+                    low_understanding TP only fires for starters.
 
     All values are on 0.0-1.0 scale.
     """
@@ -129,7 +143,7 @@ def detect_player_turning_points(
     if player.bench_streak >= tp_config.bench_streak_threshold:
         tps.append("bench_streak")
 
-    if context.matches_since_appointment is not None:
+    if is_starter and context.matches_since_appointment is not None:
         if context.matches_since_appointment <= tp_config.short_term_window:
             if player.tactical_understanding < tp_config.tactical_understanding_low:
                 tps.append("low_understanding")
@@ -180,7 +194,8 @@ class RuleBasedHandler:
         self._rules = rules
 
     def handle(
-        self, agent: PlayerAgent, context: SimContext
+        self, agent: PlayerAgent, context: SimContext,
+        *, is_starter: bool = True,
     ) -> ActionDistribution:
         """Return an action distribution for the given player and context.
 
@@ -192,7 +207,9 @@ class RuleBasedHandler:
         All distributions are loaded from config (action_distribution section
         in turning_points.toml).
         """
-        tps = detect_player_turning_points(agent, context, self._rules)
+        tps = detect_player_turning_points(
+            agent, context, self._rules, is_starter=is_starter,
+        )
         ad = self._rules.turning_points.action_distribution
 
         trust_low = self._rules.turning_points.player.trust_low
