@@ -91,6 +91,7 @@ class ComparisonMeta:
     n_runs: int
     trigger_summary: str
     created_at: str
+    rng_policy: str
 
 
 @dataclass(frozen=True)
@@ -120,7 +121,9 @@ class ComparisonResultWithMeta:
 #       are folded into version 1 as the first versioned baseline.
 #   2 — Hardening: CHECK constraints on player_agents/team_baselines,
 #       cascade_runs header table, comparison_results metadata NOT NULL.
-_SCHEMA_VERSION = 2
+#   3 — Paired comparison: rng_policy column on comparison_results
+#       to identify the RNG allocation strategy (e.g. paired_split_v1).
+_SCHEMA_VERSION = 3
 
 
 class SchemaVersionError(Exception):
@@ -272,7 +275,8 @@ CREATE TABLE IF NOT EXISTS comparison_results (
     rng_seed              INTEGER NOT NULL,
     n_runs                INTEGER NOT NULL,
     trigger_summary       TEXT    NOT NULL,
-    created_at            TEXT    NOT NULL
+    created_at            TEXT    NOT NULL,
+    rng_policy            TEXT    NOT NULL DEFAULT 'independent_v1'
 );
 """
 
@@ -1026,12 +1030,13 @@ class Database:
         *,
         rng_seed: int,
         trigger_summary: str,
+        rng_policy: str,
     ) -> None:
         """Persist a ComparisonResult's aggregated statistics with metadata.
 
         run_results are excluded from persistence (too large). On load,
         run_results is restored as an empty tuple. Full per-run data can
-        be reproduced by re-running with the same seed.
+        be reproduced by re-running with the same seed and rng_policy.
 
         Args:
             comparison_key:  Unique identifier for this comparison.
@@ -1039,13 +1044,15 @@ class Database:
             rng_seed:        Random seed used for reproducibility.
             trigger_summary: Human-readable trigger description (display
                              label only; not for trigger reconstruction).
+            rng_policy:      RNG allocation strategy identifier
+                             (e.g. 'paired_split_v1').
         """
         created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         n_runs = result.no_change.n_runs
 
         self._conn.execute(
             """
-            INSERT INTO comparison_results VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO comparison_results VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT(comparison_key) DO UPDATE SET
                 no_change_json=excluded.no_change_json,
                 with_change_json=excluded.with_change_json,
@@ -1053,7 +1060,8 @@ class Database:
                 rng_seed=excluded.rng_seed,
                 n_runs=excluded.n_runs,
                 trigger_summary=excluded.trigger_summary,
-                created_at=excluded.created_at
+                created_at=excluded.created_at,
+                rng_policy=excluded.rng_policy
             """,
             (
                 comparison_key,
@@ -1064,6 +1072,7 @@ class Database:
                 n_runs,
                 trigger_summary,
                 created_at,
+                rng_policy,
             ),
         )
         self._conn.commit()
@@ -1098,6 +1107,7 @@ class Database:
             n_runs=int(r["n_runs"]),
             trigger_summary=str(r["trigger_summary"]),
             created_at=str(r["created_at"]),
+            rng_policy=str(r["rng_policy"]),
         )
 
         return ComparisonResultWithMeta(result=result, meta=meta)

@@ -19,6 +19,7 @@ from iffootball.config import (
     TurningPointConfig,
 )
 from iffootball.simulation.comparison import (
+    RNG_POLICY,
     ComparisonResult,
     run_comparison,
 )
@@ -280,3 +281,91 @@ def _run_with_squad(
         n_runs=n_runs,
         rng_seed=42,
     )
+
+
+class TestPairedDesign:
+    """Tests for paired_split_v1 RNG policy."""
+
+    def test_rng_policy_value(self) -> None:
+        assert RNG_POLICY == "paired_split_v1"
+
+    def test_no_trigger_branches_identical(self) -> None:
+        """Without a trigger, A and B must produce identical match results.
+
+        This validates the PAIRED CONTRACT: when trigger has no effect
+        (applied_at far in the future), both branches share the same
+        match_rng seed and have the same agent state, so Poisson draws
+        must be identical.
+        """
+        # Use a trigger that never fires (applied_at after all fixtures).
+        no_effect_trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Ghost Manager",
+            transition_type="mid_season",
+            applied_at=999,  # never fires
+        )
+        result = run_comparison(
+            team=_make_team(),
+            squad=_make_squad(),
+            manager=_make_manager(),
+            fixture_list=_make_fixture_list(),
+            opponent_strengths=_make_opponent_strengths(),
+            rules=_rules(),
+            handler=RuleBasedHandler(_rules()),
+            trigger=no_effect_trigger,
+            n_runs=5,
+            rng_seed=42,
+        )
+        for sr_a, sr_b in zip(
+            result.no_change.run_results, result.with_change.run_results
+        ):
+            for mr_a, mr_b in zip(sr_a.match_results, sr_b.match_results):
+                assert mr_a.home_goals == mr_b.home_goals
+                assert mr_a.away_goals == mr_b.away_goals
+                assert mr_a.points_earned == mr_b.points_earned
+
+    def test_action_divergence_does_not_shift_match_results(self) -> None:
+        """TP action sampling in Branch B must not shift match_rng sequence.
+
+        When Branch B fires more TPs (due to trigger), its action_rng
+        consumes more random values. This must not affect the Poisson
+        draws from match_rng. We verify by running the same comparison
+        twice — once with the real trigger, once with a no-effect trigger
+        — and confirming that Branch A's match results are identical in
+        both cases. If action_rng leaked into match_rng, Branch A results
+        would shift when Branch B's TP activity changes.
+        """
+        # Run 1: real trigger (Branch B fires many TPs from manager change)
+        result_with = _run(n_runs=3, seed=77)
+
+        # Run 2: no-effect trigger (Branch B has no extra TP activity)
+        no_effect_trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Ghost Manager",
+            transition_type="mid_season",
+            applied_at=999,  # never fires
+        )
+        result_without = run_comparison(
+            team=_make_team(),
+            squad=_make_squad(),
+            manager=_make_manager(),
+            fixture_list=_make_fixture_list(),
+            opponent_strengths=_make_opponent_strengths(),
+            rules=_rules(),
+            handler=RuleBasedHandler(_rules()),
+            trigger=no_effect_trigger,
+            n_runs=3,
+            rng_seed=77,
+        )
+
+        # Branch A must be identical regardless of Branch B's TP divergence.
+        # This proves action_rng consumption in B does not shift A's match_rng.
+        for sr_with, sr_without in zip(
+            result_with.no_change.run_results,
+            result_without.no_change.run_results,
+        ):
+            for mr_with, mr_without in zip(
+                sr_with.match_results, sr_without.match_results
+            ):
+                assert mr_with.home_goals == mr_without.home_goals
+                assert mr_with.away_goals == mr_without.away_goals

@@ -3,21 +3,48 @@
 Runs the same initial state N times with and without a trigger, then
 aggregates and compares the results.
 
-Seed and reproducibility:
-    A base rng is created from rng_seed. For each run i, base_rng.spawn(2)
-    produces two independent child generators: one for Branch A (no change)
-    and one for Branch B (with trigger). The child generators have
-    independent, non-overlapping random streams — they do NOT share the
-    same sequence. This means match-by-match Poisson draws differ between
-    branches even at the same fixture. The comparison captures the
-    aggregate statistical effect of the trigger across N runs, not a
-    paired match-level difference. All results are fully reproducible
-    from the same rng_seed.
+Seed and reproducibility (paired_split_v1):
+    A base rng is created from rng_seed. For each run i, base_rng.spawn(1)
+    produces a single child; that child is then split into three
+    sub-generators:
+      - match_seed:    shared between Branch A and B (paired Poisson draws)
+      - action_seed_a: exclusive to Branch A (TP action sampling)
+      - action_seed_b: exclusive to Branch B (TP action sampling)
+
+    Because both branches feed the same match_seed into simulate_match(),
+    their Poisson draws are sampled from the same sequence. The only
+    source of match-result difference is the lambda (expected goals),
+    which reflects the intervention's effect on agent state. This paired
+    design eliminates Poisson sampling noise from the delta, making the
+    comparison more sensitive to genuine intervention effects.
+
+    PAIRED CONTRACT: simulate_match() must consume exactly 2 RNG calls
+    (goals_for, goals_against) in fixed order per fixture. If this
+    contract is violated, the match-level pairing guarantee breaks.
+
+    KNOWN LIMITATION: numpy's Poisson RNG consumption varies with
+    lambda. When A/B have different lambdas (post-trigger, due to
+    agent_state_factor divergence), match_rng desynchronizes for
+    subsequent fixtures. The guarantee is:
+      - Pre-trigger fixtures: perfectly paired (identical lambda)
+      - Post-trigger fixtures: correlated but with increasing desync
+    This is still far better than independent_v1 (no correlation).
+    For per-fixture perfect pairing, the design would need per-fixture
+    SeedSequence allocation (not implemented in v1).
+
+    TP action sampling uses separate generators so that divergent TP
+    activity in one branch does not shift the other branch's match RNG.
+
+    All results are fully reproducible from the same rng_seed.
 
 Delta computation:
     DeltaMetrics uses the union of all event types observed across both
     branches. Event types present in only one branch get 0.0 for the
     other, ensuring no key is silently dropped.
+
+RNG policy:
+    RNG_POLICY identifies the RNG allocation strategy for metadata
+    persistence. Consumers must not mix results from different policies.
 """
 
 from __future__ import annotations
@@ -36,6 +63,10 @@ from iffootball.agents.trigger import ChangeTrigger
 from iffootball.config import SimulationRules
 from iffootball.simulation.engine import Simulation, SimulationResult
 from iffootball.simulation.turning_point import TurningPointHandler
+
+# RNG allocation strategy identifier for metadata persistence.
+# Consumers must not directly compare results across different policies.
+RNG_POLICY = "paired_split_v1"
 
 
 # ---------------------------------------------------------------------------
@@ -177,14 +208,13 @@ def run_comparison(
     n_runs: int,
     rng_seed: int,
 ) -> ComparisonResult:
-    """Run N parallel A/B comparisons and return aggregated results.
+    """Run N paired A/B comparisons and return aggregated results.
 
-    For each run, two independent child generators are spawned from
-    base_rng. Branch A runs without the trigger; Branch B runs with it.
-    The child generators produce independent (not identical) random
-    streams, so match-level outcomes differ between branches. The
-    comparison captures the aggregate statistical effect of the trigger
-    across N runs.
+    Uses the paired_split_v1 RNG policy: for each run, a single child
+    generator is spawned and split into three sub-generators —
+    match_seed (shared by A and B), action_seed_a (A only), and
+    action_seed_b (B only). This ensures Poisson match draws are paired
+    across branches while TP action sampling remains independent.
 
     Args:
         team:               Team baseline (read-only, shared).
@@ -201,13 +231,13 @@ def run_comparison(
     Returns:
         ComparisonResult with aggregated A/B results and delta.
     """
-    base_rng = np.random.default_rng(rng_seed)
+    base_ss = np.random.SeedSequence(rng_seed)
 
     results_a: list[SimulationResult] = []
     results_b: list[SimulationResult] = []
 
-    for _ in range(n_runs):
-        child_a, child_b = base_rng.spawn(2)
+    for run_ss in base_ss.spawn(n_runs):
+        match_ss, action_ss_a, action_ss_b = run_ss.spawn(3)
 
         # Branch A: no trigger
         sim_a = Simulation(
@@ -218,11 +248,12 @@ def run_comparison(
             opponent_strengths=opponent_strengths,
             rules=rules,
             handler=handler,
-            rng=np.random.default_rng(child_a),
+            match_rng=np.random.default_rng(match_ss),
+            action_rng=np.random.default_rng(action_ss_a),
         )
         results_a.append(sim_a.run())
 
-        # Branch B: with trigger
+        # Branch B: with trigger (same match_ss for paired Poisson)
         sim_b = Simulation(
             team=team,
             squad=copy.deepcopy(squad),
@@ -231,7 +262,8 @@ def run_comparison(
             opponent_strengths=opponent_strengths,
             rules=rules,
             handler=handler,
-            rng=np.random.default_rng(child_b),
+            match_rng=np.random.default_rng(match_ss),
+            action_rng=np.random.default_rng(action_ss_b),
         )
         sim_b.apply_trigger(trigger)
         results_b.append(sim_b.run())

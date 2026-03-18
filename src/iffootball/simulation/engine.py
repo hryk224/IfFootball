@@ -17,6 +17,17 @@ Branch A/B independence:
     Callers must deepcopy inputs before constructing separate instances
     to ensure branches do not share state.
 
+RNG split (paired_split_v1):
+    Simulation accepts two separate generators: match_rng for Poisson
+    match result sampling (step 3) and action_rng for turning-point
+    action sampling (step 9). This separation ensures that divergent
+    TP activity in one branch does not shift the match result sequence
+    in a paired A/B comparison.
+
+    PAIRED CONTRACT: simulate_match() consumes exactly 2 RNG calls
+    (goals_for, goals_against) in fixed order per fixture. Any change
+    to this consumption pattern breaks paired comparison guarantees.
+
 Trigger timing:
     A trigger with applied_at=N takes effect at week N+1.
     _apply_pending_triggers(week) checks trigger.applied_at + 1 == week,
@@ -99,7 +110,12 @@ class Simulation:
         opponent_strengths: Pre-computed opponent strength snapshots.
         rules:              Simulation rules config.
         handler:            Turning point response handler.
-        rng:                Seeded random generator for reproducibility.
+        match_rng:          Seeded generator for match result Poisson
+                            draws. In paired comparison, A/B share the
+                            same seed so that Poisson noise cancels out.
+        action_rng:         Seeded generator for TP action sampling.
+                            Independent between A/B so that divergent TP
+                            activity does not shift match_rng sequences.
     """
 
     def __init__(
@@ -111,7 +127,8 @@ class Simulation:
         opponent_strengths: dict[str, OpponentStrength],
         rules: SimulationRules,
         handler: TurningPointHandler,
-        rng: np.random.Generator,
+        match_rng: np.random.Generator,
+        action_rng: np.random.Generator,
     ) -> None:
         self._team = team
         self._squad = squad
@@ -120,7 +137,8 @@ class Simulation:
         self._opponent_strengths = opponent_strengths
         self._rules = rules
         self._handler = handler
-        self._rng = rng
+        self._match_rng = match_rng
+        self._action_rng = action_rng
 
         self._triggers: list[ChangeTrigger] = []
         self._recent_points: list[int] = []
@@ -168,7 +186,7 @@ class Simulation:
                 fixture,
                 self._rules.adaptation,
                 self._rules.match,
-                self._rng,
+                self._match_rng,
             )
             match_results.append(result)
 
@@ -439,4 +457,4 @@ class Simulation:
         """Sample a single action from an ActionDistribution."""
         actions = list(dist.choices.keys())
         probs = [dist.choices[a] for a in actions]
-        return str(self._rng.choice(actions, p=probs))
+        return str(self._action_rng.choice(actions, p=probs))

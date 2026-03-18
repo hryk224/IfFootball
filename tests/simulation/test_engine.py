@@ -162,6 +162,8 @@ def _make_opponent_strengths() -> dict[str, OpponentStrength]:
 
 
 def _make_simulation(seed: int = 42) -> Simulation:
+    rng = np.random.default_rng(seed)
+    match_seed, action_seed = rng.spawn(2)
     return Simulation(
         team=_make_team(),
         squad=_make_squad(),
@@ -170,7 +172,8 @@ def _make_simulation(seed: int = 42) -> Simulation:
         opponent_strengths=_make_opponent_strengths(),
         rules=_rules(),
         handler=RuleBasedHandler(_rules()),
-        rng=np.random.default_rng(seed),
+        match_rng=np.random.default_rng(match_seed),
+        action_rng=np.random.default_rng(action_seed),
     )
 
 
@@ -634,7 +637,7 @@ class TestCascadeEventEmission:
             recent_points=(0, 0, 0),
         )
         # seed=0 deterministically produces 6 resists → squad_unrest.
-        sim._rng = np.random.default_rng(0)
+        sim._action_rng = np.random.default_rng(0)
         tracker = CascadeTracker()
         sim._process_player_turning_points(context, tracker, 11)
         unrest = [e for e in tracker.events if e.event_type == "squad_unrest"]
@@ -668,6 +671,8 @@ class TestBranchIndependence:
         base_squad = _make_squad()
         base_manager = _make_manager()
 
+        rng_a = np.random.default_rng(100)
+        m_a, act_a = rng_a.spawn(2)
         sim_a = Simulation(
             team=_make_team(),
             squad=copy.deepcopy(base_squad),
@@ -676,9 +681,12 @@ class TestBranchIndependence:
             opponent_strengths=_make_opponent_strengths(),
             rules=_rules(),
             handler=RuleBasedHandler(_rules()),
-            rng=np.random.default_rng(100),
+            match_rng=np.random.default_rng(m_a),
+            action_rng=np.random.default_rng(act_a),
         )
 
+        rng_b = np.random.default_rng(100)
+        m_b, act_b = rng_b.spawn(2)
         sim_b = Simulation(
             team=_make_team(),
             squad=copy.deepcopy(base_squad),
@@ -687,7 +695,8 @@ class TestBranchIndependence:
             opponent_strengths=_make_opponent_strengths(),
             rules=_rules(),
             handler=RuleBasedHandler(_rules()),
-            rng=np.random.default_rng(100),
+            match_rng=np.random.default_rng(m_b),
+            action_rng=np.random.default_rng(act_b),
         )
 
         # Apply trigger only to branch B
@@ -712,3 +721,80 @@ class TestBranchIndependence:
         understanding_a = [p.tactical_understanding for p in result_a.final_squad]
         understanding_b = [p.tactical_understanding for p in result_b.final_squad]
         assert understanding_a != understanding_b
+
+
+class TestMatchRngIsolation:
+    """Guard that match_rng is consumed only by simulate_match().
+
+    The engine's weekly loop must use match_rng exclusively for Poisson
+    match result sampling (step 3) and action_rng exclusively for TP
+    action sampling (step 9). If match_rng is accidentally used
+    elsewhere, the paired comparison guarantee breaks.
+    """
+
+    def test_match_results_depend_only_on_match_rng(self) -> None:
+        """Same match_rng seed must produce same match results regardless
+        of action_rng seed.
+
+        If match_rng were accidentally used for TP action sampling,
+        different action_rng seeds would not isolate the contamination,
+        and match results would vary with action_rng.
+        """
+        def run_with_action_seed(action_seed: int) -> list[MatchResult]:
+            rng = np.random.default_rng(55)
+            m_seed, _ = rng.spawn(2)
+            sim = Simulation(
+                team=_make_team(),
+                squad=_make_squad(),
+                manager=_make_manager(),
+                fixture_list=_make_fixture_list(),
+                opponent_strengths=_make_opponent_strengths(),
+                rules=_rules(),
+                handler=RuleBasedHandler(_rules()),
+                match_rng=np.random.default_rng(m_seed),
+                action_rng=np.random.default_rng(action_seed),
+            )
+            return sim.run().match_results
+
+        # Different action_rng seeds must not affect match results
+        results_a = run_with_action_seed(0)
+        results_b = run_with_action_seed(999)
+        for mr_a, mr_b in zip(results_a, results_b):
+            assert mr_a == mr_b
+
+    def test_no_trigger_run_reproducible_regardless_of_action_rng(self) -> None:
+        """A no-trigger simulation's match results must be reproducible
+        from the same match_rng seed, regardless of action_rng seed.
+
+        This verifies that the engine's weekly loop does not accidentally
+        use match_rng outside of simulate_match(). If match_rng were
+        consumed by TP processing or other steps, different action_rng
+        seeds (which change TP outcomes and thus engine control flow)
+        would cause match_rng to drift differently.
+
+        Note: this test only covers the no-trigger path. The trigger
+        path is covered by test_match_results_depend_only_on_match_rng
+        and by TestPairedDesign in test_comparison.py.
+        """
+        seed = 55
+
+        def run_no_trigger(action_seed: int) -> list[MatchResult]:
+            rng_base = np.random.default_rng(seed)
+            m_seed, _ = rng_base.spawn(2)
+            sim = Simulation(
+                team=_make_team(),
+                squad=copy.deepcopy(_make_squad()),
+                manager=copy.deepcopy(_make_manager()),
+                fixture_list=_make_fixture_list(),
+                opponent_strengths=_make_opponent_strengths(),
+                rules=_rules(),
+                handler=RuleBasedHandler(_rules()),
+                match_rng=np.random.default_rng(m_seed),
+                action_rng=np.random.default_rng(action_seed),
+            )
+            return sim.run().match_results
+
+        results_a = run_no_trigger(0)
+        results_b = run_no_trigger(999)
+        for mr_a, mr_b in zip(results_a, results_b):
+            assert mr_a == mr_b

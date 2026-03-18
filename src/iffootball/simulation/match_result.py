@@ -139,7 +139,11 @@ def simulate_match(
     else:
         expected_against *= match_config.home_advantage_factor
 
-    # Poisson lambda must be non-negative.
+    # PAIRED CONTRACT: exactly 2 RNG calls in this fixed order.
+    # Changing the count or order breaks paired A/B comparison guarantees.
+    # NOTE: numpy Poisson consumption is lambda-dependent internally.
+    # When A/B have different lambdas (post-trigger), this causes RNG
+    # desync for subsequent fixtures. See test_poisson_consumption_is_lambda_dependent.
     goals_for = int(rng.poisson(max(expected_for, 0.0)))
     goals_against = int(rng.poisson(max(expected_against, 0.0)))
 

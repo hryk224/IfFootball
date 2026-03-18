@@ -287,3 +287,126 @@ class TestSimulateMatch:
             rng=rng,
         )
         assert isinstance(result, MatchResult)
+
+
+# ---------------------------------------------------------------------------
+# PAIRED CONTRACT regression guard
+# ---------------------------------------------------------------------------
+
+
+class TestPairedContract:
+    """Guard the paired comparison contract of simulate_match().
+
+    PAIRED CONTRACT: simulate_match() must produce identical results
+    when called with the same RNG seed and the same lambda values,
+    regardless of what other RNG consumption occurred on a separate
+    generator. The function's RNG consumption must be deterministic
+    and must not vary based on branch-specific conditions.
+
+    If any of these tests fail after a match model change, the paired
+    comparison design must be re-evaluated before merging.
+    """
+
+    def test_same_lambda_same_seed_same_result(self) -> None:
+        """Identical inputs and seed must produce identical match results.
+
+        This is the core paired guarantee: when A/B share match_rng seed
+        and have the same lambda, their Poisson draws must be identical.
+        """
+        kwargs = dict(
+            team=_make_team(),
+            opponent=_make_opponent(),
+            starters=_make_starters(),
+            fixture=_make_fixture(),
+            adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
+        )
+        r1 = simulate_match(**kwargs, rng=np.random.default_rng(42))
+        r2 = simulate_match(**kwargs, rng=np.random.default_rng(42))
+        assert r1 == r2
+
+    def test_different_lambda_same_seed_may_differ(self) -> None:
+        """Different lambdas (from different agent state) should produce
+        different results on at least some seeds, confirming the model
+        is sensitive to state factor changes.
+        """
+        base_kwargs = dict(
+            team=_make_team(),
+            opponent=_make_opponent(),
+            fixture=_make_fixture(),
+            adaptation=_DEFAULT_ADAPTATION,
+            match_config=_DEFAULT_MATCH,
+        )
+        any_differ = False
+        for seed in range(50):
+            r_good = simulate_match(
+                **base_kwargs,
+                starters=_make_starters(current_form=1.0, fatigue=0.0),
+                rng=np.random.default_rng(seed),
+            )
+            r_bad = simulate_match(
+                **base_kwargs,
+                starters=_make_starters(current_form=0.1, fatigue=0.8),
+                rng=np.random.default_rng(seed),
+            )
+            if r_good.home_goals != r_bad.home_goals:
+                any_differ = True
+                break
+        assert any_differ, "Lambda differences should eventually produce different results"
+
+    def test_sequential_matches_reproducible(self) -> None:
+        """Calling simulate_match() N times sequentially on the same RNG
+        must be reproducible with the same seed. This guards against
+        non-deterministic consumption patterns.
+        """
+        def run_sequence(seed: int) -> list[MatchResult]:
+            rng = np.random.default_rng(seed)
+            results = []
+            for _ in range(5):
+                results.append(
+                    simulate_match(
+                        team=_make_team(),
+                        opponent=_make_opponent(),
+                        starters=_make_starters(),
+                        fixture=_make_fixture(),
+                        adaptation=_DEFAULT_ADAPTATION,
+                        match_config=_DEFAULT_MATCH,
+                        rng=rng,
+                    )
+                )
+            return results
+
+        seq1 = run_sequence(77)
+        seq2 = run_sequence(77)
+        assert seq1 == seq2
+
+    def test_poisson_consumption_is_lambda_dependent(self) -> None:
+        """Document that numpy Poisson RNG consumption varies with lambda.
+
+        This is a KNOWN LIMITATION of paired_split_v1: when A/B have
+        different lambdas (post-trigger), rng.poisson() consumes
+        different amounts of underlying entropy, causing match_rng to
+        desynchronize for subsequent fixtures.
+
+        The pairing guarantee is:
+          - Pre-trigger fixtures: perfectly paired (identical lambda)
+          - First post-trigger fixture: same RNG start position,
+            different lambda → correlated but not identical draws
+          - Subsequent fixtures: increasing desync from lambda divergence
+
+        This is still far better than independent streams (no correlation
+        at all). If perfect per-fixture pairing is needed in the future,
+        the design must switch to per-fixture SeedSequence allocation.
+        """
+        # Demonstrate that different lambda causes RNG desync
+        rng_a = np.random.default_rng(42)
+        rng_a.poisson(1.5)  # high lambda
+
+        rng_b = np.random.default_rng(42)
+        rng_b.poisson(0.5)  # low lambda
+
+        # After one Poisson call with different lambda, RNG states diverge
+        assert rng_a.random() != rng_b.random(), (
+            "Expected RNG states to diverge after Poisson calls with "
+            "different lambda values"
+        )
