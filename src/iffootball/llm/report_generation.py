@@ -275,11 +275,14 @@ class PlayerImpactDetailEntry:
         player_name:  Display name.
         impact_score: Mean absolute dynamic-state difference.
         changes:      Per-axis impact with labels and statements (max 2).
+        is_partial:   True for PARTIAL tier players with limited data.
+                      Report generation should annotate these players.
     """
 
     player_name: str
     impact_score: float
     changes: tuple[PlayerAxisChange, ...]
+    is_partial: bool = False
 
 
 @dataclass(frozen=True)
@@ -570,6 +573,7 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
             "show_limitations_info": report_input.display_hints.show_limitations_info,
             "summary_max_sentences": report_input.display_hints.summary_max_sentences,
             "summary_tradeoff_metric": report_input.display_hints.summary_tradeoff_metric,
+            "partial_player_names": sorted(report_input.display_hints.partial_player_names),
         }
     if report_input.highlights is not None:
         payload["highlights"] = [
@@ -606,8 +610,9 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
             for s in report_input.causal_steps
         ]
     if report_input.player_impact_details is not None:
-        payload["player_impact_details"] = [
-            {
+        details_payload = []
+        for p in report_input.player_impact_details:
+            entry: dict[str, object] = {
                 "player_name": p.player_name,
                 "impact_score": round(p.impact_score, 3),
                 "changes": [
@@ -620,8 +625,13 @@ def _build_payload(report_input: ReportInput) -> dict[str, Any]:
                     for c in p.changes
                 ],
             }
-            for p in report_input.player_impact_details
-        ]
+            if p.is_partial:
+                entry["data_note"] = (
+                    "Limited playing time data. Attribute estimates "
+                    "are based on fallback values, not full statistics."
+                )
+            details_payload.append(entry)
+        payload["player_impact_details"] = details_payload
     if report_input.player_impact_meta is not None:
         meta = report_input.player_impact_meta
         payload["player_impact_meta"] = {

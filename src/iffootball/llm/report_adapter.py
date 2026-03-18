@@ -18,6 +18,7 @@ Semantic boundaries preserved:
 
 from __future__ import annotations
 
+from iffootball.agents.player import SampleTier
 from iffootball.llm.report_generation import (
     CausalStepEntry,
     EvidenceEntry,
@@ -408,6 +409,7 @@ def _build_player_details(
                 player_name=pi.player_name,
                 impact_score=round(pi.impact_score, 4),
                 changes=top_changes,
+                is_partial=pi.sample_tier == SampleTier.PARTIAL,
             )
         )
     return entries

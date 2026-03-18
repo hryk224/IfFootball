@@ -165,6 +165,7 @@ class DisplayHints:
     show_limitations_info: bool
     summary_max_sentences: int = 4
     summary_tradeoff_metric: str | None = None
+    partial_player_names: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +198,7 @@ class ReportPlan:
     collapsed_step_ids: frozenset[str]
     limitation_placement: LimitationPlacement
     validation_signals: tuple[ValidationSignal, ...] = ()
+    partial_player_names: frozenset[str] = frozenset()
 
     def to_display_hints(self) -> DisplayHints:
         """Convert to DisplayHints DTO for ReportInput."""
@@ -210,6 +212,7 @@ class ReportPlan:
             show_limitations_info=self.limitation_placement.include_info,
             summary_max_sentences=self.summary_priority.max_sentences,
             summary_tradeoff_metric=self.summary_priority.tradeoff_metric,
+            partial_player_names=self.partial_player_names,
         )
 
 
@@ -356,6 +359,17 @@ def plan_report(
 
         signals = generate_validation_signals(explanation)
 
+    # Identify PARTIAL tier players across all player impacts.
+    # This is intentionally broader than featured_players: adapter and
+    # report generation may reference any player, not only featured ones.
+    from iffootball.agents.player import SampleTier
+
+    partial_names = frozenset(
+        pi.player_name
+        for pi in explanation.player_impacts
+        if pi.sample_tier == SampleTier.PARTIAL
+    )
+
     return ReportPlan(
         sections=sections,
         summary_priority=summary_priority,
@@ -364,6 +378,7 @@ def plan_report(
         collapsed_step_ids=collapsed,
         limitation_placement=limitation_placement,
         validation_signals=signals,
+        partial_player_names=partial_names,
     )
 
 

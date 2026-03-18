@@ -263,6 +263,7 @@ def _build_player_impacts(
                 impact_score=round(p.impact_score, 4),
                 changes=tuple(changes),
                 related_step_ids=related_ids,
+                sample_tier=p.sample_tier,
             )
         )
 

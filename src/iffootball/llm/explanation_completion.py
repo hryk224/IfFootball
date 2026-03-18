@@ -166,6 +166,7 @@ def _merge_player_impact(
         impact_score=skeleton_pi.impact_score,
         changes=tuple(merged),
         related_step_ids=skeleton_pi.related_step_ids,
+        sample_tier=skeleton_pi.sample_tier,
     )
 
 

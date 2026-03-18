@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from iffootball.agents.player import SampleTier
+
 # ---------------------------------------------------------------------------
 # Trigger detail key definitions per trigger type
 # ---------------------------------------------------------------------------
@@ -173,12 +175,16 @@ class PlayerImpactSummary:
         changes:          Per-axis impact with interpretations.
         related_step_ids: CausalStep IDs related to this player.
                           v1: linked by affected_agent name matching.
+        sample_tier:      Data confidence tier. PARTIAL tier players have
+                          fallback attributes and should be annotated in
+                          reports/explanations.
     """
 
     player_name: str
     impact_score: float
     changes: tuple[PlayerImpactChange, ...]
     related_step_ids: tuple[str, ...]
+    sample_tier: SampleTier = SampleTier.FULL
 
 
 # ---------------------------------------------------------------------------
