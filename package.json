@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "format:md": "prettier --write '**/*.md'"
+    "format:md": "prettier --write \"docs/**/*.md\" \"*.md\"",
+    "format:yaml": "prettier --write \"*.yml\" \"*.yaml\""
   },
   "devDependencies": {
     "prettier": "3.8.1"
