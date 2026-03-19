@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from iffootball.agents.manager import ManagerAgent
 from iffootball.agents.player import BroadPosition, PlayerAgent
-from iffootball.config import SimulationRules
+from iffootball.config import AdaptationConfig, SimulationRules
 from iffootball.simulation.lineup_selection import parse_formation
 
 
@@ -92,6 +92,34 @@ def update_current_form(
 # ---------------------------------------------------------------------------
 # Step 5: Tactical understanding update
 # ---------------------------------------------------------------------------
+
+
+def calc_initial_understanding(
+    manager: ManagerAgent,
+    config: AdaptationConfig,
+) -> float:
+    """Compute initial tactical_understanding for a new tactical context.
+
+    Used when a player enters a new tactical environment: either an
+    existing squad receiving a new manager, or a new signing joining
+    the current manager's system.
+
+    initial = base + (implementation_speed / 100) * speed_bonus
+
+    Higher implementation_speed means the manager communicates tactics
+    faster, giving the player a head start. This is a one-time offset;
+    the weekly gain rate (calc_adaptation_rate) is a separate mechanism
+    that also uses implementation_speed.
+
+    The result is clamped to [0.0, 1.0].
+
+    Args:
+        manager: The current or newly appointed manager.
+        config:  Adaptation config with base and speed_bonus parameters.
+    """
+    speed_factor = manager.implementation_speed / 100.0
+    value = config.initial_understanding_base + speed_factor * config.initial_understanding_speed_bonus
+    return max(0.0, min(1.0, value))
 
 
 def calc_tactical_familiarity(

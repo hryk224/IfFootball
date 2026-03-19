@@ -52,6 +52,13 @@ class AdaptationConfig:
                                      after a loss (0.0-1.0).
         form_drop_on_resist:        current_form decrease when a player
                                      samples "resist" action (0.0-1.0).
+        trust_decline_on_resist:    Base trust decline when a player
+                                     samples "resist". Modulated by manager
+                                     style_stubbornness (0.0-1.0).
+        initial_understanding_base: Base tactical_understanding after a
+                                     new manager appointment (0.0-1.0).
+        initial_understanding_speed_bonus: Additional understanding from
+                                     manager implementation_speed (0.0-1.0).
     """
 
     base_fatigue_increase: float
@@ -63,6 +70,9 @@ class AdaptationConfig:
     form_boost_on_win: float
     form_drop_on_loss: float
     form_drop_on_resist: float
+    trust_decline_on_resist: float
+    initial_understanding_base: float
+    initial_understanding_speed_bonus: float
 
     def __post_init__(self) -> None:
         if self.base_fatigue_increase < 0:
@@ -109,6 +119,21 @@ class AdaptationConfig:
             raise ValueError(
                 f"form_drop_on_resist must be in [0.0, 1.0], "
                 f"got {self.form_drop_on_resist}"
+            )
+        if not 0.0 <= self.trust_decline_on_resist <= 1.0:
+            raise ValueError(
+                f"trust_decline_on_resist must be in [0.0, 1.0], "
+                f"got {self.trust_decline_on_resist}"
+            )
+        if not 0.0 <= self.initial_understanding_base <= 1.0:
+            raise ValueError(
+                f"initial_understanding_base must be in [0.0, 1.0], "
+                f"got {self.initial_understanding_base}"
+            )
+        if not 0.0 <= self.initial_understanding_speed_bonus <= 1.0:
+            raise ValueError(
+                f"initial_understanding_speed_bonus must be in [0.0, 1.0], "
+                f"got {self.initial_understanding_speed_bonus}"
             )
 
 
@@ -356,6 +381,13 @@ def _load_adaptation(path: Path) -> AdaptationConfig:
         form_boost_on_win=float(data["form_boost_on_win"]),
         form_drop_on_loss=float(data["form_drop_on_loss"]),
         form_drop_on_resist=float(data["form_drop_on_resist"]),
+        trust_decline_on_resist=float(data["trust_decline_on_resist"]),
+        initial_understanding_base=float(
+            data["initial_understanding_base"]
+        ),
+        initial_understanding_speed_bonus=float(
+            data["initial_understanding_speed_bonus"]
+        ),
     )
 
 

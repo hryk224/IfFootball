@@ -32,3 +32,16 @@ form_boost_on_win = 0.06
 form_drop_on_loss = 0.04
 # Form penalty when a player samples "resist" action at a turning point.
 form_drop_on_resist = 0.05
+
+# Base trust decline when a player samples "resist" action (0.0-1.0 scale).
+# Actual penalty is modulated by manager style_stubbornness:
+#   penalty = base * (0.5 + style_stubbornness / 100.0 * 0.5)
+# At stubbornness=50 (neutral), effective decline ≈ 0.03 (matches prior behaviour).
+trust_decline_on_resist = 0.04
+
+# Initial tactical_understanding after a new manager appointment (0.0-1.0 scale).
+# Actual initial value is modulated by manager implementation_speed:
+#   initial = base + (implementation_speed / 100.0) * speed_bonus
+# At speed=50 (neutral), initial ≈ 0.275 (close to prior fixed 0.25).
+initial_understanding_base = 0.20
+initial_understanding_speed_bonus = 0.15

@@ -57,6 +57,9 @@ def _rules() -> SimulationRules:
             form_boost_on_win=0.06,
             form_drop_on_loss=0.04,
             form_drop_on_resist=0.05,
+            trust_decline_on_resist=0.04,
+            initial_understanding_base=0.20,
+            initial_understanding_speed_bonus=0.15,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(

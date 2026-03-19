@@ -17,6 +17,7 @@ from iffootball.config import (
 )
 from iffootball.simulation.state_update import (
     calc_adaptation_rate,
+    calc_initial_understanding,
     calc_tactical_familiarity,
     update_fatigue,
     update_job_security,
@@ -42,6 +43,9 @@ def _rules() -> SimulationRules:
             form_boost_on_win=0.06,
             form_drop_on_loss=0.04,
             form_drop_on_resist=0.05,
+            trust_decline_on_resist=0.04,
+            initial_understanding_base=0.20,
+            initial_understanding_speed_bonus=0.15,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(
@@ -153,6 +157,51 @@ class TestUpdateFatigue:
 # ---------------------------------------------------------------------------
 # Step 5: tactical understanding
 # ---------------------------------------------------------------------------
+
+
+class TestCalcInitialUnderstanding:
+    def test_neutral_speed(self) -> None:
+        mgr = _manager(implementation_speed=50.0)
+        config = _rules().adaptation
+        # 0.20 + (50/100) * 0.15 = 0.275
+        assert calc_initial_understanding(mgr, config) == pytest.approx(0.275)
+
+    def test_zero_speed(self) -> None:
+        mgr = _manager(implementation_speed=0.0)
+        config = _rules().adaptation
+        # 0.20 + 0 * 0.15 = 0.20
+        assert calc_initial_understanding(mgr, config) == pytest.approx(0.20)
+
+    def test_max_speed(self) -> None:
+        mgr = _manager(implementation_speed=100.0)
+        config = _rules().adaptation
+        # 0.20 + 1.0 * 0.15 = 0.35
+        assert calc_initial_understanding(mgr, config) == pytest.approx(0.35)
+
+    def test_stays_below_low_understanding_threshold(self) -> None:
+        """Even at max speed, initial understanding must stay below 0.40."""
+        mgr = _manager(implementation_speed=100.0)
+        config = _rules().adaptation
+        assert calc_initial_understanding(mgr, config) < 0.40
+
+    def test_clamped_to_unit(self) -> None:
+        mgr = _manager(implementation_speed=100.0)
+        config = AdaptationConfig(
+            base_fatigue_increase=0.05,
+            base_fatigue_recovery=0.03,
+            tactical_understanding_gain=0.04,
+            fatigue_penalty_weight=0.5,
+            trust_increase_on_start=0.02,
+            trust_decrease_on_bench=0.01,
+            form_boost_on_win=0.06,
+            form_drop_on_loss=0.04,
+            form_drop_on_resist=0.05,
+            trust_decline_on_resist=0.04,
+            initial_understanding_base=0.90,
+            initial_understanding_speed_bonus=0.50,
+        )
+        # 0.90 + 1.0 * 0.50 = 1.40 → clamped to 1.0
+        assert calc_initial_understanding(mgr, config) == 1.0
 
 
 class TestCalcTacticalFamiliarity:

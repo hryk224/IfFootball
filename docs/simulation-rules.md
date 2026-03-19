@@ -12,17 +12,20 @@ Configuration files are located in `config/simulation_rules/`.
 
 These parameters control weekly state updates for players during the simulation.
 
-| Parameter                     | Value | Scale   | Definition                                                                  |
-| ----------------------------- | ----- | ------- | --------------------------------------------------------------------------- |
-| `base_fatigue_increase`       | 0.05  | 0.0–1.0 | Fatigue added to each player who played in a match                          |
-| `base_fatigue_recovery`       | 0.03  | 0.0–1.0 | Fatigue recovered by each player who did not play                           |
-| `tactical_understanding_gain` | 0.04  | 0.0–1.0 | Base weekly gain in tactical understanding (before adaptation_rate scaling) |
-| `fatigue_penalty_weight`      | 0.5   | 0.0–1.0 | How much fatigue reduces the agent state factor in match result calculation |
-| `trust_increase_on_start`     | 0.02  | 0.0–1.0 | Manager trust increase when selected as starter                             |
-| `trust_decrease_on_bench`     | 0.01  | 0.0–1.0 | Manager trust decrease when benched                                         |
-| `form_boost_on_win`           | 0.06  | 0.0–1.0 | Form increase for starters after a win                                      |
-| `form_drop_on_loss`           | 0.04  | 0.0–1.0 | Form decrease for starters after a loss                                     |
-| `form_drop_on_resist`         | 0.05  | 0.0–1.0 | Form decrease when a player samples "resist" action                         |
+| Parameter                           | Value | Scale   | Definition                                                                  |
+| ----------------------------------- | ----- | ------- | --------------------------------------------------------------------------- |
+| `base_fatigue_increase`             | 0.05  | 0.0–1.0 | Fatigue added to each player who played in a match                          |
+| `base_fatigue_recovery`             | 0.03  | 0.0–1.0 | Fatigue recovered by each player who did not play                           |
+| `tactical_understanding_gain`       | 0.04  | 0.0–1.0 | Base weekly gain in tactical understanding (before adaptation_rate scaling) |
+| `fatigue_penalty_weight`            | 0.5   | 0.0–1.0 | How much fatigue reduces the agent state factor in match result calculation |
+| `trust_increase_on_start`           | 0.02  | 0.0–1.0 | Manager trust increase when selected as starter                             |
+| `trust_decrease_on_bench`           | 0.01  | 0.0–1.0 | Manager trust decrease when benched                                         |
+| `form_boost_on_win`                 | 0.06  | 0.0–1.0 | Form increase for starters after a win                                      |
+| `form_drop_on_loss`                 | 0.04  | 0.0–1.0 | Form decrease for starters after a loss                                     |
+| `form_drop_on_resist`               | 0.05  | 0.0–1.0 | Form decrease when a player samples "resist" action                         |
+| `trust_decline_on_resist`           | 0.04  | 0.0–1.0 | Base trust decline on "resist" (modulated by manager style_stubbornness)    |
+| `initial_understanding_base`        | 0.20  | 0.0–1.0 | Base tactical_understanding after new manager appointment                   |
+| `initial_understanding_speed_bonus` | 0.15  | 0.0–1.0 | Additional understanding from manager implementation_speed                  |
 
 ### Rationale
 
@@ -32,6 +35,8 @@ These parameters control weekly state updates for players during the simulation.
 - **trust_increase/decrease:** Asymmetric (0.02 vs 0.01) to reflect that trust builds faster through selection than it erodes through benching. A starter for 10 consecutive matches gains ~0.2 trust. [Developer judgement]
 - **form_boost_on_win / form_drop_on_loss:** Form represents recent team-result momentum. Starters gain +0.06 on a win and lose -0.04 on a loss; draws have no effect. Non-starters keep their current form unchanged. Over 9 matches with a 5W-2D-2L record, a starter's form rises from 0.5 to ~0.72. All values are provisional estimates subject to calibration. [Developer judgement, no empirical calibration yet]
 - **form_drop_on_resist:** When a player samples "resist" at a turning point, form drops by 0.05. This is separate from the match-result update and fires only during TP processing. [Developer judgement]
+- **trust_decline_on_resist:** Base trust penalty on resist. Modulated by `style_stubbornness`: `penalty = base * (0.5 + stubbornness/100 * 0.5)`. At stubbornness=50 (neutral), effective decline ≈ 0.03 (matches prior fixed value). Stubborn managers cause larger trust drops; flexible managers cause smaller drops. [Developer judgement]
+- **initial_understanding_base / speed_bonus:** Initial tactical understanding after a new manager appointment. Modulated by `implementation_speed`: `initial = base + (speed/100) * bonus`. At speed=50 (neutral), initial ≈ 0.275 (close to prior fixed 0.25). At speed=100 (max), initial = 0.35, which stays below the `tactical_understanding_low` threshold (0.40) so that low_understanding TPs still fire but less aggressively. Note: `implementation_speed` affects both this one-time initial offset and the weekly adaptation rate (`calc_adaptation_rate`); the two mechanisms are complementary but separate — the initial offset sets the starting point, while the weekly rate determines the convergence speed. [Developer judgement]
 
 ---
 
@@ -110,18 +115,18 @@ These define the probability weights for player actions (adapt / resist / transf
 
 ## Cascade Event Magnitudes
 
-These are hardcoded in `engine.py` (not yet config-driven). Included here for completeness.
+These are hardcoded in `engine.py` (not yet config-driven), except for `form_drop` and `trust_decline` which are config-driven. Included here for completeness.
 
-| Event                                          | Magnitude | Context                                  |
-| ---------------------------------------------- | --------- | ---------------------------------------- |
-| form_drop (resist)                             | 0.3       | Direct effect of resist action           |
-| trust_decline (chained from form_drop)         | 0.2       | Secondary effect: form drop erodes trust |
-| playing_time_change (transfer)                 | 0.4       | Player signals desire to leave           |
-| adaptation_progress (adapt)                    | 0.15      | Positive adaptation recorded             |
-| tactical_confusion (low_understanding + adapt) | 0.2       | Confusion alongside adaptation           |
-| squad_unrest (2+ resist in same week)          | 0.5       | Squad-level discontent signal            |
-| manager_tactical_shift (job_security_warning)  | 0.5       | Manager shifts to defensive tactics      |
-| manager_dismissal (job_security_critical)      | 0.8       | Manager dismissed                        |
+| Event                                          | Magnitude | Context                                                                 |
+| ---------------------------------------------- | --------- | ----------------------------------------------------------------------- |
+| form_drop (resist)                             | config    | Direct effect of resist action (form_drop_on_resist)                    |
+| trust_decline (chained from form_drop)         | 0.2       | Cascade record magnitude (state effect is config-driven × stubbornness) |
+| playing_time_change (transfer)                 | 0.4       | Player signals desire to leave                                          |
+| adaptation_progress (adapt)                    | 0.15      | Positive adaptation recorded                                            |
+| tactical_confusion (low_understanding + adapt) | 0.2       | Confusion alongside adaptation                                          |
+| squad_unrest (2+ resist in same week)          | 0.5       | Squad-level discontent signal                                           |
+| manager_tactical_shift (job_security_warning)  | 0.5       | Manager shifts to defensive tactics                                     |
+| manager_dismissal (job_security_critical)      | 0.8       | Manager dismissed                                                       |
 
 ### Rationale
 
@@ -132,7 +137,7 @@ These are hardcoded in `engine.py` (not yet config-driven). Included here for co
 ## Known Limitations
 
 - All parameter values are provisional (M3). Formal calibration against historical outcomes is planned for M4 backtest evaluation.
-- Cascade event magnitudes are hardcoded, not config-driven. Config externalisation is a future improvement.
+- Most cascade event magnitudes are hardcoded, not config-driven. `form_drop` and `trust_decline` state effects are now config-driven and manager-attribute-modulated. Full config externalisation of remaining magnitudes is a future improvement.
 - `pace` and `physicality` player attributes are fixed at 50.0 (neutral) because StatsBomb Open Data does not include sprint speed or physical contact metrics.
 - `consistency` is simulation-stored but not yet connected to lineup selection or match result calculation.
 - The match model uses team-level xG baselines; individual player contribution to xG is not simulated per-match.

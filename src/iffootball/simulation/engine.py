@@ -60,6 +60,7 @@ from iffootball.simulation.cascade_tracker import CascadeEvent, CascadeTracker
 from iffootball.simulation.lineup_selection import select_lineup
 from iffootball.simulation.match_result import MatchResult, simulate_match
 from iffootball.simulation.state_update import (
+    calc_initial_understanding,
     update_current_form,
     update_fatigue,
     update_job_security,
@@ -322,8 +323,11 @@ class Simulation:
             self._manager.squad_trust = {}
 
             # Reset squad trust and tactical understanding for new manager.
+            initial_tu = calc_initial_understanding(
+                self._manager, self._rules.adaptation
+            )
             for p in self._squad:
-                p.tactical_understanding = 0.25  # low starting point
+                p.tactical_understanding = initial_tu
                 p.manager_trust = 0.5  # neutral
 
         elif isinstance(trigger, TransferInTrigger):
@@ -344,7 +348,9 @@ class Simulation:
             player = copy.deepcopy(trigger.player)
 
             # Set dynamic state for new signing.
-            player.tactical_understanding = 0.25  # new to the team
+            player.tactical_understanding = calc_initial_understanding(
+                self._manager, self._rules.adaptation
+            )
             player.manager_trust = self._TRANSFER_TRUST.get(
                 trigger.expected_role, 0.5
             )
@@ -381,7 +387,18 @@ class Simulation:
                 # Form drops (config-driven) and trust declines.
                 form_penalty = self._rules.adaptation.form_drop_on_resist
                 player.current_form = max(0.0, player.current_form - form_penalty)
-                player.manager_trust = max(0.0, player.manager_trust - 0.03)
+                # Trust decline modulated by manager stubbornness:
+                # stubborn managers cause larger trust drops on resist.
+                stubbornness_factor = (
+                    0.5 + self._manager.style_stubbornness / 100.0 * 0.5
+                )
+                trust_penalty = (
+                    self._rules.adaptation.trust_decline_on_resist
+                    * stubbornness_factor
+                )
+                player.manager_trust = max(
+                    0.0, player.manager_trust - trust_penalty
+                )
                 form_event = tracker.record(
                     week=week,
                     event_type="form_drop",

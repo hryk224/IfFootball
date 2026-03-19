@@ -56,6 +56,9 @@ def _rules() -> SimulationRules:
             form_boost_on_win=0.06,
             form_drop_on_loss=0.04,
             form_drop_on_resist=0.05,
+            trust_decline_on_resist=0.04,
+            initial_understanding_base=0.20,
+            initial_understanding_speed_bonus=0.15,
         ),
         turning_points=TurningPointConfig(
             player=PlayerTurningPointConfig(
@@ -284,10 +287,10 @@ class TestSimulationTrigger:
         )
         sim.apply_trigger(trigger)
         result = sim.run()
-        # After trigger, understanding should have started from 0.25
-        # and increased over remaining weeks
+        # After trigger, understanding should have started from initial value
+        # (0.20 + 50/100 * 0.15 = 0.275 for neutral speed) and increased.
         for p in result.final_squad:
-            assert p.tactical_understanding >= 0.25
+            assert p.tactical_understanding >= 0.275
 
     def test_manager_change_resets_tactical_attributes(self) -> None:
         sim = _make_simulation()
@@ -408,9 +411,9 @@ class TestManagerChangeWithProfile:
         )
         sim.apply_trigger(trigger)
         result = sim.run()
-        # Player tactical_understanding should have started from 0.25 reset
+        # Profile has implementation_speed=80 → initial = 0.20 + 0.8*0.15 = 0.32
         for p in result.final_squad:
-            assert p.tactical_understanding >= 0.25
+            assert p.tactical_understanding >= 0.32
 
     def test_none_profile_uses_defaults(self) -> None:
         """Explicitly passing None behaves like no profile."""
@@ -512,7 +515,9 @@ class TestTransferInTrigger:
         )
         sim._execute_trigger(trigger)
         added = [p for p in sim._squad if p.player_id == 99]
-        assert added[0].tactical_understanding == 0.25
+        # Manager has implementation_speed=50 (default) →
+        # initial = 0.20 + 0.5 * 0.15 = 0.275
+        assert added[0].tactical_understanding == pytest.approx(0.275)
 
     def test_bench_streak_zero(self) -> None:
         sim = _make_simulation()
@@ -803,3 +808,106 @@ class TestMatchRngIsolation:
         results_b = run_no_trigger(999)
         for mr_a, mr_b in zip(results_a, results_b):
             assert mr_a == mr_b
+
+
+class TestManagerIndividuality:
+    """Tests that manager attributes produce differentiated simulation outcomes."""
+
+    def test_trust_decline_varies_with_stubbornness(self) -> None:
+        """Stubborn manager causes larger trust drops than flexible manager."""
+        from iffootball.simulation.cascade_tracker import CascadeTracker
+        from iffootball.simulation.turning_point import SimContext
+
+        def measure_trust_after_resist(stubbornness: float) -> float:
+            sim = _make_simulation(seed=0)
+            sim._manager.style_stubbornness = stubbornness
+            # Force conditions for resist.
+            sim._matches_since_appointment = 1
+            for p in sim._squad:
+                p.bench_streak = 5
+                p.manager_trust = 0.5
+            context = SimContext(
+                current_week=11,
+                matches_since_appointment=1,
+                manager=sim._manager,
+                recent_points=(0, 0, 0),
+            )
+            sim._action_rng = np.random.default_rng(0)
+            tracker = CascadeTracker()
+            all_ids = {p.player_id for p in sim._squad}
+            sim._process_player_turning_points(context, tracker, 11, all_ids)
+            # Return average trust of players who resisted.
+            trusts = [p.manager_trust for p in sim._squad if p.manager_trust < 0.5]
+            return sum(trusts) / len(trusts) if trusts else 0.5
+
+        trust_flexible = measure_trust_after_resist(20.0)
+        trust_stubborn = measure_trust_after_resist(80.0)
+        # Stubborn manager should cause more trust decline (lower avg trust).
+        assert trust_stubborn < trust_flexible
+
+    def test_initial_understanding_varies_with_speed(self) -> None:
+        """High implementation_speed manager gives squad higher initial understanding."""
+        slow_profile = _make_incoming_profile()
+        slow_profile.implementation_speed = 20.0
+
+        fast_profile = _make_incoming_profile()
+        fast_profile.implementation_speed = 80.0
+
+        sim_slow = _make_simulation()
+        sim_slow.apply_trigger(ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Slow Coach",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=slow_profile,
+        ))
+        sim_slow._execute_trigger(sim_slow._triggers[0])
+        understanding_slow = [p.tactical_understanding for p in sim_slow._squad]
+
+        sim_fast = _make_simulation()
+        sim_fast.apply_trigger(ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Fast Coach",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=fast_profile,
+        ))
+        sim_fast._execute_trigger(sim_fast._triggers[0])
+        understanding_fast = [p.tactical_understanding for p in sim_fast._squad]
+
+        # Fast manager should give higher initial understanding.
+        assert all(f > s for f, s in zip(understanding_fast, understanding_slow))
+
+    def test_high_speed_still_triggers_low_understanding_tp(self) -> None:
+        """Even with max implementation_speed, initial understanding stays below threshold."""
+        from iffootball.simulation.turning_point import SimContext, detect_player_turning_points
+
+        sim = _make_simulation()
+        profile = _make_incoming_profile()
+        profile.implementation_speed = 100.0
+        trigger = ManagerChangeTrigger(
+            outgoing_manager_name="Original Manager",
+            incoming_manager_name="Fast Coach",
+            transition_type="mid_season",
+            applied_at=10,
+            incoming_profile=profile,
+        )
+        sim._execute_trigger(trigger)
+
+        # Initial understanding = 0.20 + 1.0 * 0.15 = 0.35 < 0.40 threshold.
+        context = SimContext(
+            current_week=11,
+            matches_since_appointment=0,
+            manager=sim._manager,
+            recent_points=(),
+        )
+        # At least some players should still fire low_understanding TP.
+        any_tp = False
+        for p in sim._squad:
+            tps = detect_player_turning_points(
+                p, context, _rules(), is_starter=True,
+            )
+            if "low_understanding" in tps:
+                any_tp = True
+                break
+        assert any_tp

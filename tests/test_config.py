@@ -46,6 +46,9 @@ def _make_config_dir(
             form_boost_on_win = 0.06
             form_drop_on_loss = 0.04
             form_drop_on_resist = 0.05
+            trust_decline_on_resist = 0.04
+            initial_understanding_base = 0.20
+            initial_understanding_speed_bonus = 0.15
         """
     _write_toml(config_dir / "adaptation.toml", adaptation)
 
@@ -133,7 +136,7 @@ class TestSimulationRulesLoad:
         rules = SimulationRules.load(config_dir)
 
         with pytest.raises(AttributeError):
-            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)  # type: ignore[misc]
+            rules.adaptation = AdaptationConfig(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)  # type: ignore[misc]
 
     def test_loads_from_real_config(self) -> None:
         """Verify that the actual config files in the repo are loadable."""
@@ -235,6 +238,9 @@ class TestSimulationRulesLoadErrors:
             form_boost_on_win = 0.06
             form_drop_on_loss = 0.04
             form_drop_on_resist = 0.05
+            trust_decline_on_resist = 0.04
+            initial_understanding_base = 0.20
+            initial_understanding_speed_bonus = 0.15
             """,
         )
         _write_toml(
@@ -299,6 +305,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_fatigue_recovery(self) -> None:
@@ -313,6 +322,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_understanding_gain(self) -> None:
@@ -327,6 +339,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_zero_values_are_valid(self) -> None:
@@ -340,6 +355,9 @@ class TestAdaptationConfigValidation:
             form_boost_on_win=0.0,
             form_drop_on_loss=0.0,
             form_drop_on_resist=0.0,
+            trust_decline_on_resist=0.0,
+            initial_understanding_base=0.0,
+            initial_understanding_speed_bonus=0.0,
         )
         assert config.base_fatigue_increase == 0.0
 
@@ -355,6 +373,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_trust_increase(self) -> None:
@@ -369,6 +390,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_form_boost(self) -> None:
@@ -383,6 +407,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=-0.01,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_form_drop_on_loss(self) -> None:
@@ -397,6 +424,9 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=-0.01,
                 form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
             )
 
     def test_negative_form_drop_on_resist(self) -> None:
@@ -411,6 +441,61 @@ class TestAdaptationConfigValidation:
                 form_boost_on_win=0.06,
                 form_drop_on_loss=0.04,
                 form_drop_on_resist=-0.01,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
+            )
+
+
+    def test_negative_trust_decline_on_resist(self) -> None:
+        with pytest.raises(ValueError, match="trust_decline_on_resist"):
+            AdaptationConfig(
+                base_fatigue_increase=0.05,
+                base_fatigue_recovery=0.03,
+                tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=0.5,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
+                form_boost_on_win=0.06,
+                form_drop_on_loss=0.04,
+                form_drop_on_resist=0.05,
+                trust_decline_on_resist=-0.01,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=0.15,
+            )
+
+    def test_negative_initial_understanding_base(self) -> None:
+        with pytest.raises(ValueError, match="initial_understanding_base"):
+            AdaptationConfig(
+                base_fatigue_increase=0.05,
+                base_fatigue_recovery=0.03,
+                tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=0.5,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
+                form_boost_on_win=0.06,
+                form_drop_on_loss=0.04,
+                form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=-0.01,
+                initial_understanding_speed_bonus=0.15,
+            )
+
+    def test_negative_initial_understanding_speed_bonus(self) -> None:
+        with pytest.raises(ValueError, match="initial_understanding_speed_bonus"):
+            AdaptationConfig(
+                base_fatigue_increase=0.05,
+                base_fatigue_recovery=0.03,
+                tactical_understanding_gain=0.04,
+                fatigue_penalty_weight=0.5,
+                trust_increase_on_start=0.02,
+                trust_decrease_on_bench=0.01,
+                form_boost_on_win=0.06,
+                form_drop_on_loss=0.04,
+                form_drop_on_resist=0.05,
+                trust_decline_on_resist=0.04,
+                initial_understanding_base=0.20,
+                initial_understanding_speed_bonus=-0.01,
             )
 
 
