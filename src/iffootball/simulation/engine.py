@@ -144,6 +144,9 @@ class Simulation:
         self._triggers: list[ChangeTrigger] = []
         self._recent_points: list[int] = []
         self._matches_since_appointment: int | None = None
+        # Baseline pressing for manager profile → match result adjustment.
+        # Captured at init so Branch A/B delta is relative to the starting manager.
+        self._baseline_pressing: float = manager.pressing_intensity
 
     def apply_trigger(self, trigger: ChangeTrigger) -> None:
         """Queue a trigger for application during run().
@@ -188,6 +191,8 @@ class Simulation:
                 self._rules.adaptation,
                 self._rules.match,
                 self._match_rng,
+                manager_pressing=self._manager.pressing_intensity,
+                baseline_pressing=self._baseline_pressing,
             )
             match_results.append(result)
 

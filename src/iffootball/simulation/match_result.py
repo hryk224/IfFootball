@@ -97,6 +97,32 @@ def calc_agent_state_factor(
     return max(_STATE_FACTOR_MIN, min(_STATE_FACTOR_MAX, factor))
 
 
+def calc_pressing_attack_factor(
+    manager_pressing: float,
+    baseline_pressing: float,
+    weight: float,
+) -> float:
+    """Compute pressing-based adjustment to expected goals for.
+
+    Compares the current manager's pressing_intensity against the
+    baseline (starting manager) to produce a small multiplicative
+    factor. Higher pressing than baseline slightly boosts attack;
+    lower pressing slightly reduces it.
+
+    Clamped to [0.95, 1.05] to prevent unrealistic extremes.
+    Returns 1.0 (neutral) when weight is 0 or baseline is 0.
+
+    Args:
+        manager_pressing:  Current manager's pressing_intensity.
+        baseline_pressing: Starting manager's pressing_intensity.
+        weight:            Config-driven sensitivity (0.0-1.0).
+    """
+    if weight == 0.0 or baseline_pressing == 0.0:
+        return 1.0
+    delta = (manager_pressing - baseline_pressing) / baseline_pressing
+    return max(0.95, min(1.05, 1.0 + delta * weight))
+
+
 def simulate_match(
     team: TeamBaseline,
     opponent: OpponentStrength,
@@ -105,21 +131,28 @@ def simulate_match(
     adaptation: AdaptationConfig,
     match_config: MatchConfig,
     rng: np.random.Generator,
+    *,
+    manager_pressing: float = 0.0,
+    baseline_pressing: float = 0.0,
 ) -> MatchResult:
     """Simulate a single match and return the result.
 
     Expected goals are computed from team/opponent baselines scaled by the
-    agent state factor, then adjusted for home advantage and sampled via
-    Poisson distribution.
+    agent state factor and pressing adjustment, then adjusted for home
+    advantage and sampled via Poisson distribution.
 
     Args:
-        team:         Simulated team's baseline metrics.
-        opponent:     Opponent's strength snapshot at trigger point.
-        starters:     Starting XI of the simulated team.
-        fixture:      Fixture being played (provides is_home).
-        adaptation:   Adaptation config (provides fatigue_penalty_weight).
-        match_config: Match config (provides home_advantage_factor).
-        rng:          Seeded random generator for reproducibility.
+        team:               Simulated team's baseline metrics.
+        opponent:           Opponent's strength snapshot at trigger point.
+        starters:           Starting XI of the simulated team.
+        fixture:            Fixture being played (provides is_home).
+        adaptation:         Adaptation config (provides fatigue_penalty_weight).
+        match_config:       Match config (provides home_advantage_factor,
+                            pressing_attack_weight).
+        rng:                Seeded random generator for reproducibility.
+        manager_pressing:   Current manager's pressing_intensity.
+        baseline_pressing:  Starting manager's pressing_intensity (baseline
+                            for delta comparison).
 
     Returns:
         MatchResult with goals, home/away flag, and points earned.
@@ -127,9 +160,14 @@ def simulate_match(
     state_factor = calc_agent_state_factor(
         starters, adaptation.fatigue_penalty_weight
     )
+    pressing_factor = calc_pressing_attack_factor(
+        manager_pressing, baseline_pressing,
+        match_config.pressing_attack_weight,
+    )
 
     expected_for = (
-        team.xg_for_per90 * opponent.xg_against_per90 * state_factor
+        team.xg_for_per90 * opponent.xg_against_per90
+        * state_factor * pressing_factor
     )
     expected_against = opponent.xg_for_per90 * team.xg_against_per90
 

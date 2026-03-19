@@ -122,18 +122,30 @@ class MatchConfig:
     """Match result calculation parameters.
 
     Attributes:
-        home_advantage_factor: Multiplier for expected goals when the
-                               simulated team plays at home (or for
-                               the opponent when away). Must be > 0.
+        home_advantage_factor:  Multiplier for expected goals when the
+                                simulated team plays at home (or for
+                                the opponent when away). Must be > 0.
+        pressing_attack_weight: How much pressing_intensity difference
+                                from the baseline manager affects
+                                expected_goals_for. A small multiplicative
+                                adjustment: factor = 1 + delta * weight.
+                                Clamped to [0.95, 1.05]. Default 0.0
+                                disables the effect.
     """
 
     home_advantage_factor: float
+    pressing_attack_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.home_advantage_factor <= 0:
             raise ValueError(
                 f"home_advantage_factor must be > 0, "
                 f"got {self.home_advantage_factor}"
+            )
+        if not 0.0 <= self.pressing_attack_weight <= 1.0:
+            raise ValueError(
+                f"pressing_attack_weight must be in [0.0, 1.0], "
+                f"got {self.pressing_attack_weight}"
             )
 
 
@@ -352,6 +364,7 @@ def _load_match(path: Path) -> MatchConfig:
     data = _read_toml(path)
     return MatchConfig(
         home_advantage_factor=float(data["home_advantage_factor"]),
+        pressing_attack_weight=float(data.get("pressing_attack_weight", 0.0)),
     )
 
 

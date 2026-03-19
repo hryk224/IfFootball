@@ -8,3 +8,11 @@
 # When is_home=False, expected_against *= this factor (opponent is at home).
 # Must be > 0.
 home_advantage_factor = 1.1
+
+# How much pressing_intensity difference from the baseline manager
+# affects expected_goals_for. Multiplicative adjustment:
+#   pressing_delta = (current - baseline) / baseline
+#   attack_factor = clamp(1.0 + delta * weight, 0.95, 1.05)
+# Only affects expected_for (attack side). Defense is unchanged.
+# All values are provisional estimates.
+pressing_attack_weight = 0.10
