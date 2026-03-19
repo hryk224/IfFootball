@@ -19,6 +19,7 @@ Semantic boundaries preserved:
 from __future__ import annotations
 
 from iffootball.agents.player import SampleTier
+from iffootball.simulation.comparison import ComparisonResult
 from iffootball.llm.report_generation import (
     CausalStepEntry,
     EvidenceEntry,
@@ -39,6 +40,7 @@ def structured_to_report_input(
     plan: ReportPlan | None = None,
     limitations: list[str] | None = None,
     n_runs: int = 1,
+    comparison: ComparisonResult | None = None,
 ) -> ReportInput:
     """Convert a StructuredExplanation to a ReportInput.
 
@@ -134,6 +136,25 @@ def structured_to_report_input(
 
         signals_md = render_signals_markdown(plan.validation_signals)
 
+    # Generate code-based supplementary sections when comparison is available.
+    hypothesis_md = ""
+    suggestions_md = ""
+    if comparison is not None:
+        from iffootball.simulation.hypothesis_critique import (
+            generate_hypothesis_critiques,
+            render_critiques_markdown,
+        )
+        from iffootball.simulation.scenario_suggestions import (
+            generate_scenario_suggestions,
+            render_suggestions_markdown,
+        )
+
+        hyp_critiques = generate_hypothesis_critiques(comparison, explanation)
+        hypothesis_md = render_critiques_markdown(hyp_critiques)
+
+        suggestions = generate_scenario_suggestions(comparison, explanation)
+        suggestions_md = render_suggestions_markdown(suggestions)
+
     return ReportInput(
         trigger_description=trigger_desc,
         points_mean_a=points_a,
@@ -150,6 +171,8 @@ def structured_to_report_input(
         player_impact_details=player_details,
         player_impact_meta=player_meta,
         validation_signals_md=signals_md,
+        scenario_suggestions_md=suggestions_md,
+        hypothesis_critiques_md=hypothesis_md,
     )
 
 
