@@ -340,6 +340,7 @@ class ReportInput:
     player_impact_details: list[PlayerImpactDetailEntry] | None = None
     player_impact_meta: PlayerImpactMeta | None = None
     validation_signals_md: str = ""
+    scenario_suggestions_md: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -813,6 +814,9 @@ def _append_code_sections(
     order = section_order or _DEFAULT_SECTION_ORDER
     if "what_to_watch" in order and report_input.validation_signals_md:
         report = report.rstrip() + "\n\n" + report_input.validation_signals_md
+    # Next Steps is always appended when available (not LLM-generated).
+    if report_input.scenario_suggestions_md:
+        report = report.rstrip() + "\n\n" + report_input.scenario_suggestions_md
     return report
 
 
