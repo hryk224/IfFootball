@@ -139,10 +139,15 @@ def structured_to_report_input(
     # Generate code-based supplementary sections when comparison is available.
     hypothesis_md = ""
     suggestions_md = ""
+    risk_md = ""
     if comparison is not None:
         from iffootball.simulation.hypothesis_critique import (
             generate_hypothesis_critiques,
             render_critiques_markdown,
+        )
+        from iffootball.simulation.risk_audit import (
+            generate_risk_audit,
+            render_risk_audit_markdown,
         )
         from iffootball.simulation.scenario_suggestions import (
             generate_scenario_suggestions,
@@ -151,6 +156,9 @@ def structured_to_report_input(
 
         hyp_critiques = generate_hypothesis_critiques(comparison, explanation)
         hypothesis_md = render_critiques_markdown(hyp_critiques)
+
+        risk_flags = generate_risk_audit(comparison, explanation)
+        risk_md = render_risk_audit_markdown(risk_flags)
 
         suggestions = generate_scenario_suggestions(comparison, explanation)
         suggestions_md = render_suggestions_markdown(suggestions)
@@ -173,6 +181,7 @@ def structured_to_report_input(
         validation_signals_md=signals_md,
         scenario_suggestions_md=suggestions_md,
         hypothesis_critiques_md=hypothesis_md,
+        risk_audit_md=risk_md,
     )
 
 
