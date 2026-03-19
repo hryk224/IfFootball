@@ -5,7 +5,10 @@
 
 [player]
 # Consecutive matches on the bench before a turning point is triggered.
-bench_streak_threshold = 3
+# Raised from 3 to 5 to account for larger squads (26 players with
+# partial tier). With 11 starters, ~15 benched players per week is
+# normal; 5 consecutive benchings is a clearer signal of exclusion.
+bench_streak_threshold = 5
 
 # tactical_understanding below this value triggers short-term confusion
 # (only within short_term_window matches after a managerial change).
@@ -14,7 +17,9 @@ tactical_understanding_low = 0.40
 
 # Number of matches after a new manager appointment during which
 # low tactical_understanding triggers a turning point.
-short_term_window = 4
+# Reduced from 4 to 2 to limit cascade over-firing while keeping
+# the early-confusion narrative for the first ~2 weeks.
+short_term_window = 2
 
 # manager_trust below this value combined with bench_streak TP triggers
 # resist-heavy response in the RuleBasedHandler.
