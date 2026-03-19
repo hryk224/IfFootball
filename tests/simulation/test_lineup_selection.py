@@ -115,6 +115,7 @@ def _make_player(
     return PlayerAgent(
         player_id=player_id,
         player_name=f"Player {player_id}",
+        team_name="Test Team",
         position_name=position_name,
         role_family=role_family,
         broad_position=broad_position,

@@ -481,6 +481,7 @@ def _derive_representative_positions(events: pd.DataFrame) -> dict[int, str]:
 def build_player_agents(
     events: pd.DataFrame,
     lineups: dict[str, pd.DataFrame],
+    team_name: str,
 ) -> list[PlayerAgent]:
     """Build PlayerAgent instances for qualified and partial players.
 
@@ -554,6 +555,7 @@ def build_player_agents(
             PlayerAgent(
                 player_id=pid,
                 player_name=player_names[pid],
+                team_name=team_name,
                 position_name=position_name,
                 role_family=role,
                 broad_position=broad,
@@ -590,6 +592,7 @@ def build_player_agents(
             PlayerAgent(
                 player_id=pid,
                 player_name=player_names[pid],
+                team_name=team_name,
                 position_name=position_name,
                 role_family=role,
                 broad_position=broad,

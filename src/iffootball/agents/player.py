@@ -69,6 +69,7 @@ class PlayerAgent:
     """Represents a player within the simulation.
 
     Attributes:
+        team_name: StatsBomb team name the player belongs to.
         position_name: StatsBomb original position string adopted at initialisation.
             This is the *representative* position — the most frequently occurring
             position in the player's match events (measured by event count, not
@@ -95,6 +96,7 @@ class PlayerAgent:
 
     player_id: int
     player_name: str
+    team_name: str
     position_name: str
     role_family: RoleFamily
     broad_position: BroadPosition

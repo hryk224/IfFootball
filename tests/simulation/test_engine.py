@@ -91,6 +91,7 @@ def _make_player(
     return PlayerAgent(
         player_id=player_id,
         player_name=f"Player {player_id}",
+        team_name="Test Team",
         position_name=pos_name,
         role_family=role,
         broad_position=broad,
@@ -439,6 +440,7 @@ def _make_transfer_player() -> PlayerAgent:
     return PlayerAgent(
         player_id=99,
         player_name="Transfer Player",
+        team_name="Test Team",
         position_name="Center Forward",
         role_family=RoleFamily.FORWARD,
         broad_position=BroadPosition.FW,
@@ -564,6 +566,7 @@ class TestTransferInTrigger:
             player=PlayerAgent(
                 player_id=1,
                 player_name="Duplicate",
+                team_name="Test Team",
                 position_name="Center Forward",
                 role_family=RoleFamily.FORWARD,
                 broad_position=BroadPosition.FW,

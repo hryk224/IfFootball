@@ -125,7 +125,7 @@ class ComparisonResultWithMeta:
 #       to identify the RNG allocation strategy (e.g. paired_split_v1).
 #   4 — Squad coverage: sample_tier column on player_agents to distinguish
 #       FULL (percentile-normalised) from PARTIAL (fallback attributes).
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 class SchemaVersionError(Exception):
@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS player_agents (
     player_id             INTEGER NOT NULL,
     competition_id        INTEGER NOT NULL,
     season_id             INTEGER NOT NULL,
+    team_name             TEXT    NOT NULL,
     player_name           TEXT    NOT NULL,
     position_name         TEXT    NOT NULL,
     role_family           TEXT    NOT NULL,
@@ -479,7 +480,7 @@ class Database:
         rows = [
             (
                 a.player_id, competition_id, season_id,
-                a.player_name, a.position_name,
+                a.team_name, a.player_name, a.position_name,
                 a.role_family.value, a.broad_position.value,
                 a.pace, a.passing, a.shooting, a.pressing,
                 a.defending, a.physicality, a.consistency,
@@ -492,8 +493,9 @@ class Database:
         ]
         self._conn.executemany(
             """
-            INSERT INTO player_agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO player_agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(player_id, competition_id, season_id) DO UPDATE SET
+                team_name=excluded.team_name,
                 player_name=excluded.player_name,
                 position_name=excluded.position_name,
                 role_family=excluded.role_family,
@@ -519,16 +521,32 @@ class Database:
         self,
         competition_id: int,
         season_id: int,
+        team_name: str | None = None,
     ) -> list[PlayerAgent]:
-        """Load all PlayerAgent instances for a competition/season."""
-        rows = self._conn.execute(
-            "SELECT * FROM player_agents WHERE competition_id=? AND season_id=?",
-            (competition_id, season_id),
-        ).fetchall()
+        """Load PlayerAgent instances for a competition/season.
+
+        Args:
+            competition_id: StatsBomb competition ID.
+            season_id:      StatsBomb season ID.
+            team_name:      Optional team filter. When None, loads all teams.
+        """
+        if team_name is not None:
+            rows = self._conn.execute(
+                "SELECT * FROM player_agents "
+                "WHERE competition_id=? AND season_id=? AND team_name=?",
+                (competition_id, season_id, team_name),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM player_agents "
+                "WHERE competition_id=? AND season_id=?",
+                (competition_id, season_id),
+            ).fetchall()
         return [
             PlayerAgent(
                 player_id=int(r["player_id"]),
                 player_name=str(r["player_name"]),
+                team_name=str(r["team_name"]),
                 position_name=str(r["position_name"]),
                 role_family=RoleFamily(r["role_family"]),
                 broad_position=BroadPosition(r["broad_position"]),

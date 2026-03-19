@@ -50,6 +50,7 @@ def _make_player() -> PlayerAgent:
     return PlayerAgent(
         player_id=7,
         player_name="Test Player",
+        team_name="Test Team",
         position_name="Right Wing",
         role_family=RoleFamily.WINGER,
         broad_position=BroadPosition.MF,

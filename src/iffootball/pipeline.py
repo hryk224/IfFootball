@@ -273,7 +273,9 @@ def initialize(
     merged_lineups = _merge_lineups(lineups_by_match)
 
     # -- 4. Build target-team agents --
-    player_agents = build_player_agents(team_pre_events, merged_lineups)
+    player_agents = build_player_agents(
+        team_pre_events, merged_lineups, team_name=team_name
+    )
 
     team_baseline = build_team_baseline(
         team_pre_events,

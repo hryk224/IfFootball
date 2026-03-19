@@ -49,6 +49,7 @@ def _make_squad() -> list[PlayerAgent]:
             PlayerAgent(
                 player_id=i + 1,
                 player_name=f"Player {i + 1}",
+                team_name="Test Team",
                 position_name=pos_name,
                 role_family=role,
                 broad_position=broad,
@@ -61,9 +62,9 @@ def _make_squad() -> list[PlayerAgent]:
                 consistency=50.0,
             )
         )
-    squad.append(PlayerAgent(12, "Player 12", "Center Back", RoleFamily.CENTER_BACK, BroadPosition.DF, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
-    squad.append(PlayerAgent(13, "Player 13", "Center Defensive Midfield", RoleFamily.DEFENSIVE_MIDFIELDER, BroadPosition.MF, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
-    squad.append(PlayerAgent(14, "Player 14", "Center Forward", RoleFamily.FORWARD, BroadPosition.FW, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
+    squad.append(PlayerAgent(12, "Player 12", "Test Team", "Center Back", RoleFamily.CENTER_BACK, BroadPosition.DF, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
+    squad.append(PlayerAgent(13, "Player 13", "Test Team", "Center Defensive Midfield", RoleFamily.DEFENSIVE_MIDFIELDER, BroadPosition.MF, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
+    squad.append(PlayerAgent(14, "Player 14", "Test Team", "Center Forward", RoleFamily.FORWARD, BroadPosition.FW, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0))
     return squad
 
 

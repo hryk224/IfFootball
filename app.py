@@ -138,6 +138,7 @@ def _build_transfer_trigger(params: SimulationParams) -> TransferInTrigger:
     player = PlayerAgent(
         player_id=99999,
         player_name=params.transfer_player_name,
+        team_name="",
         position_name="Center Forward",
         role_family=RoleFamily.FORWARD,
         broad_position=BroadPosition.FW,

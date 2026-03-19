@@ -34,6 +34,7 @@ def _make_player(player_id: int = 1) -> PlayerAgent:
     return PlayerAgent(
         player_id=player_id,
         player_name="Test Player",
+        team_name="Test Team",
         position_name="Center Forward",
         role_family=RoleFamily.FORWARD,
         broad_position=BroadPosition.FW,
@@ -241,6 +242,7 @@ class TestPlayerAgent:
         updated = PlayerAgent(
             player_id=agent.player_id,
             player_name="Updated Name",
+            team_name="Test Team",
             position_name=agent.position_name,
             role_family=agent.role_family,
             broad_position=agent.broad_position,

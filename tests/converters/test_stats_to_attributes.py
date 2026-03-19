@@ -240,24 +240,24 @@ class TestBuildPlayerAgents:
     def test_returns_list_of_player_agents(self) -> None:
         from iffootball.agents.player import PlayerAgent
 
-        agents = build_player_agents(_make_full_events(), _make_lineups())
+        agents = build_player_agents(_make_full_events(), _make_lineups(), "Team A")
         assert all(isinstance(a, PlayerAgent) for a in agents)
 
     def test_qualified_players_are_included(self) -> None:
-        agents = build_player_agents(_make_full_events(), _make_lineups())
+        agents = build_player_agents(_make_full_events(), _make_lineups(), "Team A")
         ids = {a.player_id for a in agents}
         assert 1 in ids
         assert 2 in ids
 
     def test_position_fields_are_populated(self) -> None:
-        agents = build_player_agents(_make_full_events(), _make_lineups())
+        agents = build_player_agents(_make_full_events(), _make_lineups(), "Team A")
         gk = next(a for a in agents if a.player_id == 1)
         assert gk.position_name == "Goalkeeper"
         assert gk.role_family == RoleFamily.GOALKEEPER
         assert gk.broad_position == BroadPosition.GK
 
     def test_technical_attributes_in_range(self) -> None:
-        agents = build_player_agents(_make_full_events(), _make_lineups())
+        agents = build_player_agents(_make_full_events(), _make_lineups(), "Team A")
         for agent in agents:
             assert 0.0 <= agent.passing <= 100.0
             assert 0.0 <= agent.pressing <= 100.0
@@ -267,7 +267,7 @@ class TestBuildPlayerAgents:
         events_bad = _make_full_events().copy()
         events_bad.loc[events_bad["player_id"] == 1, "position"] = "Unknown Role"
         with pytest.raises(ValueError, match="Unsupported position_name"):
-            build_player_agents(events_bad, _make_lineups())
+            build_player_agents(events_bad, _make_lineups(), "Team A")
 
     def test_representative_position_uses_event_frequency(self) -> None:
         # Player 1 appears as Right Center Back (7 events) and Right Back (3 events).
@@ -289,7 +289,7 @@ class TestBuildPlayerAgents:
         lineups_single = {
             "Team A": pd.DataFrame({"player_id": [1], "player_name": ["Alice"]})
         }
-        agents = build_player_agents(events_multi, lineups_single)
+        agents = build_player_agents(events_multi, lineups_single, "Team A")
         alice = next(a for a in agents if a.player_id == 1)
         assert alice.position_name == "Right Center Back"
         assert alice.role_family == RoleFamily.CENTER_BACK
@@ -300,14 +300,14 @@ class TestBuildPlayerAgents:
         events_no_pos = _make_full_events().copy()
         events_no_pos.loc[events_no_pos["player_id"] == 1, "position"] = None
         with pytest.raises(ValueError, match="has no position data in events"):
-            build_player_agents(events_no_pos, _make_lineups())
+            build_player_agents(events_no_pos, _make_lineups(), "Team A")
 
     def test_player_in_events_but_not_in_lineup_is_skipped(self) -> None:
         # Player 2 qualifies by minutes but has no lineup entry; must not appear in output.
         lineups_partial = {
             "Team A": pd.DataFrame({"player_id": [1], "player_name": ["Alice"]})
         }
-        agents = build_player_agents(_make_full_events(), lineups_partial)
+        agents = build_player_agents(_make_full_events(), lineups_partial, "Team A")
         ids = {a.player_id for a in agents}
         assert 2 not in ids
         assert 1 in ids
@@ -323,6 +323,6 @@ class TestBuildPlayerAgents:
                 }
             )
         }
-        agents = build_player_agents(_make_full_events(), lineups_extra)
+        agents = build_player_agents(_make_full_events(), lineups_extra, "Team A")
         ids = {a.player_id for a in agents}
         assert 3 not in ids

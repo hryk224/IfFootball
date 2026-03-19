@@ -77,6 +77,7 @@ def _make_player(
     return PlayerAgent(
         player_id=1,
         player_name="Player 1",
+        team_name="Test Team",
         position_name="Center Forward",
         role_family=RoleFamily.FORWARD,
         broad_position=BroadPosition.FW,
