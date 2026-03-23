@@ -1,7 +1,7 @@
 """IfFootball Streamlit UI.
 
-Minimal single-page application for running what-if simulations and
-displaying comparison results (radar charts, player impact, reports).
+Season-scenario application: select a team, choose a what-if scenario
+(manager change, player add, player remove), and view comparison results.
 
 Run with:
     streamlit run app.py
@@ -9,23 +9,12 @@ Run with:
 
 from __future__ import annotations
 
-import tomllib
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import matplotlib.pyplot as plt
 import streamlit as st
 
 from iffootball.agents.manager import ManagerAgent
-from iffootball.candidates import CandidateResolver
-from iffootball.agents.player import BroadPosition, PlayerAgent, RoleFamily
-from iffootball.agents.trigger import (
-    ChangeTrigger,
-    ManagerChangeTrigger,
-    TransferInTrigger,
-)
-from iffootball.collectors.statsbomb import StatsBombOpenDataCollector
 from iffootball.config import SimulationRules
 from iffootball.llm.client import LLMClient
 from iffootball.llm.report_generation import (
@@ -34,10 +23,9 @@ from iffootball.llm.report_generation import (
     ReportInput,
     generate_report,
 )
-from iffootball.pipeline import InitializationResult, initialize
+from iffootball.scenario import ScenarioDefinition, load_team_season_state, run_scenario
+from iffootball.simulation.comparison import ComparisonResult
 from iffootball.storage.db import Database
-from iffootball.simulation.comparison import ComparisonResult, run_comparison
-from iffootball.simulation.turning_point import RuleBasedHandler
 from iffootball.visualization.player_impact import PlayerImpact, rank_player_impact
 from iffootball.visualization.player_radar import create_player_radar_figure
 from iffootball.visualization.radar_chart import create_radar_figure
@@ -49,120 +37,88 @@ from iffootball.visualization.radar_data import extract_radar_data
 
 _CONFIG_DIR = Path(__file__).parent / "config"
 _RULES_DIR = _CONFIG_DIR / "simulation_rules"
-_TARGETS_PATH = _CONFIG_DIR / "targets.toml"
-_CACHE_DIR = Path(__file__).parent / "data" / "demo_cache"
+_SEASON_CACHE_DIR = Path(__file__).parent / "data" / "season_cache"
 
 _DEFAULT_N_RUNS = 10
 _DEFAULT_SEED = 42
 _DEFAULT_TOP_PLAYERS = 3
 
-
-# ---------------------------------------------------------------------------
-# Typed params
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SimulationParams:
-    """Typed container for sidebar input parameters."""
-
-    competition_id: int
-    season_id: int
-    team_name: str
-    manager_name: str
-    trigger_week: int
-    n_runs: int
-    seed: int
-    trigger_type: str  # "manager_change" | "transfer_in"
-    # Manager change fields
-    incoming_manager_name: str = ""
-    # Transfer fields
-    transfer_player_name: str = ""
-    transfer_expected_role: str = "starter"
+# Premier League 2015-16 (only supported season for now).
+_COMP_ID = 2
+_SEASON_ID = 27
+_LEAGUE_LABEL = "Premier League 2015-16"
 
 
 # ---------------------------------------------------------------------------
-# Config loading
+# Season cache helpers
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data
-def _load_targets() -> list[dict[str, Any]]:
-    """Load competition targets from TOML config."""
-    with _TARGETS_PATH.open("rb") as f:
-        data = tomllib.load(f)
-    return data["competitions"]  # type: ignore[no-any-return]
+def _season_cache_path() -> Path:
+    return _SEASON_CACHE_DIR / "premier_league_2015-16.db"
 
 
-# Known competition names for human-readable display.
-_COMPETITION_NAMES: dict[int, str] = {
-    2: "Premier League",
-    11: "La Liga",
-}
+def _open_season_db() -> Database | None:
+    """Open the season cache DB.
 
-# Known season labels.
-_SEASON_NAMES: dict[int, str] = {
-    27: "2015-16",
-}
-
-
-@st.cache_resource
-def _get_resolver() -> CandidateResolver:
-    """Create a cached CandidateResolver instance."""
-    return CandidateResolver(StatsBombOpenDataCollector())
-
-
-def _competition_label(target: dict[str, Any]) -> str:
-    """Human-readable label for a competition target."""
-    comp_id = int(target["competition_id"])
-    season_id = int(target["season_id"])
-    comp_name = _COMPETITION_NAMES.get(comp_id, f"Competition {comp_id}")
-    season_name = _SEASON_NAMES.get(season_id, f"Season {season_id}")
-    return f"{comp_name} {season_name}"
-
-
-# ---------------------------------------------------------------------------
-# Incoming manager profile
-# ---------------------------------------------------------------------------
-
-from iffootball.incoming_profile import resolve_incoming_profile  # noqa: E402
-
-
-def _build_transfer_trigger(params: SimulationParams) -> TransferInTrigger:
-    """Build a TransferInTrigger with a neutral-attribute PlayerAgent.
-
-    The transfer player uses 50th-percentile technical attributes since
-    we don't have StatsBomb data for hypothetical signings.
+    Creates a new connection per call. SQLite connections are not
+    thread-safe, and Streamlit runs scripts in different threads
+    across reruns, so caching a single connection causes errors.
     """
-    # Generate a unique player_id unlikely to collide with existing squad.
-    player = PlayerAgent(
-        player_id=99999,
-        player_name=params.transfer_player_name,
-        team_name="",
-        position_name="Center Forward",
-        role_family=RoleFamily.FORWARD,
-        broad_position=BroadPosition.FW,
-        pace=50.0,
-        passing=50.0,
-        shooting=50.0,
-        pressing=50.0,
-        defending=50.0,
-        physicality=50.0,
-        consistency=50.0,
-    )
-    return TransferInTrigger(
-        player_name=params.transfer_player_name,
-        expected_role=params.transfer_expected_role,
-        applied_at=params.trigger_week,
-        player=player,
-    )
+    path = _season_cache_path()
+    if not path.exists():
+        return None
+    try:
+        return Database(path)
+    except Exception:
+        return None
 
 
-# ---------------------------------------------------------------------------
-# Preset scenarios (shared with scripts/preview_presets.py)
-# ---------------------------------------------------------------------------
+def _load_team_list(db: Database) -> list[str]:
+    """Get all team names from season cache."""
+    rows = db._conn.execute(  # noqa: SLF001
+        "SELECT DISTINCT team_name FROM team_baselines "
+        "WHERE competition_id=? AND season_id=? ORDER BY team_name",
+        (_COMP_ID, _SEASON_ID),
+    ).fetchall()
+    return [str(r["team_name"]) for r in rows]
 
-from iffootball.presets import DEMO_PRESETS
+
+def _load_manager_candidates(
+    db: Database, exclude_team: str,
+) -> list[tuple[str, str]]:
+    """Get (manager_name, team_name) pairs excluding the target team."""
+    rows = db._conn.execute(  # noqa: SLF001
+        "SELECT manager_name, team_name FROM manager_agents "
+        "WHERE competition_id=? AND season_id=? AND team_name != ? "
+        "ORDER BY team_name, manager_name",
+        (_COMP_ID, _SEASON_ID, exclude_team),
+    ).fetchall()
+    return [(str(r["manager_name"]), str(r["team_name"])) for r in rows]
+
+
+def _load_player_candidates(
+    db: Database, exclude_team: str,
+) -> list[tuple[int, str, str]]:
+    """Get (player_id, player_name, team_name) for other teams."""
+    rows = db._conn.execute(  # noqa: SLF001
+        "SELECT player_id, player_name, team_name FROM player_agents "
+        "WHERE competition_id=? AND season_id=? AND team_name != ? "
+        "ORDER BY team_name, player_name",
+        (_COMP_ID, _SEASON_ID, exclude_team),
+    ).fetchall()
+    return [
+        (int(r["player_id"]), str(r["player_name"]), str(r["team_name"]))
+        for r in rows
+    ]
+
+
+def _load_squad_players(
+    db: Database, team_name: str,
+) -> list[tuple[int, str]]:
+    """Get (player_id, player_name) for a team's squad."""
+    agents = db.load_player_agents(_COMP_ID, _SEASON_ID, team_name=team_name)
+    return [(a.player_id, a.player_name) for a in agents]
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +126,8 @@ from iffootball.presets import DEMO_PRESETS
 # ---------------------------------------------------------------------------
 
 
-def _render_input() -> SimulationParams | None:
-    """Render guided scenario input and return parameters on selection."""
+def _render_input() -> ScenarioDefinition | None:
+    """Render scenario input and return definition on selection."""
     # --- Sidebar: Advanced Settings + LLM status ---
     with st.sidebar.expander("Advanced Settings"):
         n_runs = int(
@@ -184,9 +140,8 @@ def _render_input() -> SimulationParams | None:
                 "Random Seed", min_value=0, max_value=99999, value=_DEFAULT_SEED
             )
         )
-
-    # Report language is EN-only (canonical output).
-    st.session_state["_report_lang"] = "en"
+    st.session_state["_n_runs"] = n_runs
+    st.session_state["_seed"] = seed
 
     # LLM status display.
     try:
@@ -200,248 +155,101 @@ def _render_input() -> SimulationParams | None:
     except Exception:
         st.sidebar.info("LLM: not available")
 
-    # --- Main area: Preset cards ---
+    # --- Check season cache ---
+    db = _open_season_db()
+    if db is None:
+        st.warning(
+            "Season cache not found. Run:\n\n"
+            "```\nuv run python scripts/build_season_cache.py\n```"
+        )
+        return None
+
+    # --- Main area ---
     st.subheader("What if...?")
-    st.caption("Premier League 2015-16")
+    st.caption(_LEAGUE_LABEL)
 
-    # Render all preset cards first, then check which was pressed.
-    selected_preset = None
-    cols = st.columns(len(DEMO_PRESETS))
-    for i, (col, preset) in enumerate(zip(cols, DEMO_PRESETS)):
-        with col:
-            with st.container(border=True):
-                st.markdown(f"**{preset.label}**")
-                st.caption(f"Week {preset.trigger_week}")
-                if st.button("Run", key=f"preset_{i}", use_container_width=True):
-                    selected_preset = preset
+    # Team selection
+    teams = _load_team_list(db)
+    if not teams:
+        st.error("No teams found in season cache.")
+        return None
 
-    if selected_preset is not None:
-        return SimulationParams(
-            competition_id=2,
-            season_id=27,
-            team_name=selected_preset.team_name,
-            manager_name=selected_preset.manager_name,
-            trigger_week=selected_preset.trigger_week,
-            n_runs=n_runs,
-            seed=seed,
-            trigger_type="manager_change",
-            incoming_manager_name=selected_preset.incoming_manager_name,
+    team_name = str(st.selectbox("Team", teams) or teams[0])
+
+    # Scenario type
+    scenario_type = str(
+        st.radio(
+            "Scenario",
+            options=["manager_change", "player_add", "player_remove"],
+            format_func={
+                "manager_change": "What if a different manager?",
+                "player_add": "What if we signed a player?",
+                "player_remove": "What if without a player?",
+            }.get,
+            horizontal=True,
+        )
+        or "manager_change"
+    )
+
+    # Scenario-specific inputs
+    alt_manager_name: str | None = None
+    alt_manager_team_name: str | None = None
+    player_id: int | None = None
+    player_name: str | None = None
+    expected_role: str | None = None
+
+    if scenario_type == "manager_change":
+        candidates = _load_manager_candidates(db, team_name)
+        if not candidates:
+            st.warning("No manager candidates found.")
+            return None
+        labels = [f"{mgr} ({team})" for mgr, team in candidates]
+        selected = str(st.selectbox("Incoming Manager", labels) or labels[0])
+        idx = labels.index(selected)
+        alt_manager_name = candidates[idx][0]
+        alt_manager_team_name = candidates[idx][1]
+
+    elif scenario_type == "player_add":
+        candidates_p = _load_player_candidates(db, team_name)
+        if not candidates_p:
+            st.warning("No player candidates found.")
+            return None
+        labels_p = [f"{name} ({team})" for _, name, team in candidates_p]
+        selected_p = str(st.selectbox("Player to Add", labels_p) or labels_p[0])
+        idx_p = labels_p.index(selected_p)
+        player_id = candidates_p[idx_p][0]
+        player_name = candidates_p[idx_p][1]
+        expected_role = str(
+            st.selectbox("Expected Role", ["starter", "rotation", "squad"])
+            or "starter"
         )
 
-    # --- Custom (experimental) ---
-    with st.expander("Custom scenario (experimental)"):
-        st.caption(
-            "Advanced: build your own scenario. Candidates are resolved "
-            "from StatsBomb data. Transfer triggers use neutral attributes."
+    else:  # player_remove
+        squad = _load_squad_players(db, team_name)
+        if not squad:
+            st.warning("No players found in squad.")
+            return None
+        labels_s = [f"{name} (ID: {pid})" for pid, name in squad]
+        selected_s = str(st.selectbox("Player to Remove", labels_s) or labels_s[0])
+        idx_s = labels_s.index(selected_s)
+        player_id = squad[idx_s][0]
+        player_name = squad[idx_s][1]
+
+    # Run button
+    if st.button("Run Scenario", use_container_width=True, type="primary"):
+        return ScenarioDefinition(
+            team_name=team_name,
+            competition_id=_COMP_ID,
+            season_id=_SEASON_ID,
+            scenario_type=scenario_type,  # type: ignore[arg-type]
+            alt_manager_name=alt_manager_name,
+            alt_manager_team_name=alt_manager_team_name,
+            player_id=player_id,
+            player_name=player_name,
+            expected_role=expected_role,
         )
-
-        targets = _load_targets()
-        target_labels = [_competition_label(t) for t in targets]
-        selected_idx = int(
-            st.selectbox(
-                "Competition / Season",
-                range(len(targets)),
-                format_func=lambda i: target_labels[i],
-            )
-            or 0
-        )
-        target = targets[selected_idx]
-        comp_id = int(target["competition_id"])
-        szn_id = int(target["season_id"])
-
-        # Resolve teams from targets.
-        clubs: list[str] = target["clubs"]
-        team_name = str(st.selectbox("Team", clubs) or clubs[0])
-
-        trigger_week: int = st.slider(
-            "Trigger Week", min_value=1, max_value=38, value=10
-        )
-
-        # Resolve current manager at the selected trigger_week.
-        resolver = _get_resolver()
-        canonical = resolver.manager_at_week(comp_id, szn_id, team_name, trigger_week)
-        team_managers = resolver.managers(
-            comp_id, szn_id, team_name, at_week=trigger_week
-        )
-        mgr_names = [c.manager_name for c in team_managers]
-        if mgr_names:
-            # Default to the canonical manager at that week.
-            default_idx = 0
-            if canonical and canonical.manager_name in mgr_names:
-                default_idx = mgr_names.index(canonical.manager_name)
-            manager_name = str(
-                st.selectbox("Current Manager", mgr_names, index=default_idx)
-                or mgr_names[0]
-            )
-        else:
-            manager_name = st.text_input(
-                "Current Manager Name",
-                placeholder="e.g., Louis van Gaal",
-            )
-
-        trigger_type = str(
-            st.radio(
-                "Trigger Type",
-                options=["manager_change", "transfer_in"],
-                format_func=lambda x: {
-                    "manager_change": "Manager Change",
-                    "transfer_in": "Player Transfer (Experimental)",
-                }[x],
-            )
-            or "manager_change"
-        )
-
-        incoming_manager_name = ""
-        transfer_player_name = ""
-        transfer_expected_role = "starter"
-
-        if trigger_type == "manager_change":
-            # Resolve incoming candidates (same league, exclude current team).
-            incoming_candidates = resolver.incoming_candidates(
-                comp_id, szn_id, exclude_team=team_name
-            )
-            incoming_names = [
-                f"{c.manager_name} ({c.team_name})" for c in incoming_candidates
-            ]
-            if incoming_names:
-                selected_incoming = str(
-                    st.selectbox("Incoming Manager", incoming_names)
-                    or incoming_names[0]
-                )
-                # Extract manager name (before the parenthetical team name).
-                idx = incoming_names.index(selected_incoming)
-                incoming_manager_name = incoming_candidates[idx].manager_name
-            else:
-                incoming_manager_name = st.text_input(
-                    "Incoming Manager Name",
-                    placeholder="e.g., José Mourinho",
-                )
-        else:
-            transfer_player_name = st.text_input(
-                "Player Name",
-                placeholder="e.g., Kylian Mbappe",
-            )
-            transfer_expected_role = str(
-                st.selectbox(
-                    "Expected Role",
-                    options=["starter", "rotation", "squad"],
-                )
-                or "starter"
-            )
-
-        if st.button("Run Custom Scenario", use_container_width=True):
-            if not manager_name.strip():
-                st.error("Current Manager Name is required.")
-                return None
-            if trigger_type == "manager_change" and not incoming_manager_name.strip():
-                st.error("Incoming Manager Name is required.")
-                return None
-            if trigger_type == "transfer_in" and not transfer_player_name.strip():
-                st.error("Player Name is required.")
-                return None
-
-            return SimulationParams(
-                competition_id=comp_id,
-                season_id=szn_id,
-                team_name=team_name,
-                manager_name=manager_name.strip(),
-                trigger_week=trigger_week,
-                n_runs=n_runs,
-                seed=seed,
-                trigger_type=trigger_type,
-                incoming_manager_name=incoming_manager_name.strip(),
-                transfer_player_name=transfer_player_name.strip(),
-                transfer_expected_role=transfer_expected_role,
-            )
 
     return None
-
-
-# ---------------------------------------------------------------------------
-# Cache loading
-# ---------------------------------------------------------------------------
-
-
-def _team_cache_path(team_name: str, trigger_week: int) -> Path:
-    """Return the per-team+week cache DB path."""
-    safe_name = team_name.replace(" ", "_").lower()
-    return _CACHE_DIR / f"{safe_name}_w{trigger_week}.db"
-
-
-def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
-    """Try to load initialization data from per-scenario demo cache DB.
-
-    Cache is keyed by team_name + trigger_week. Returns None if cache
-    file doesn't exist or any required component (player_agents,
-    team_baseline, manager_agent, fixture_list, opponent_strengths,
-    league_context) is missing. Manager lookup requires exact name match.
-    """
-    cache_path = _team_cache_path(params.team_name, params.trigger_week)
-    if not cache_path.exists():
-        return None
-
-    try:
-        db = Database(cache_path)
-    except Exception:
-        return None
-
-    try:
-        player_agents = db.load_player_agents(
-            params.competition_id, params.season_id
-        )
-        if not player_agents:
-            return None
-
-        team_baseline = db.load_team_baseline(
-            params.team_name, params.competition_id, params.season_id
-        )
-        if team_baseline is None:
-            return None
-
-        # Load manager by team name — cache stores the canonical manager.
-        # Try user-specified name first, then fall back to any cached manager.
-        manager_agent = db.load_manager_agent(
-            params.manager_name,
-            params.team_name,
-            params.competition_id,
-            params.season_id,
-        )
-        if manager_agent is None:
-            # Manager name mismatch — cache miss for this specific manager.
-            return None
-
-        fixture_list = db.load_fixture_list(
-            params.team_name,
-            params.competition_id,
-            params.season_id,
-        )
-        if fixture_list is None:
-            return None
-
-        opponent_strengths = db.load_opponent_strengths(
-            params.competition_id, params.season_id
-        )
-        if not opponent_strengths:
-            return None
-
-        league_context = db.load_league_context(
-            params.competition_id, params.season_id
-        )
-        if league_context is None:
-            return None
-
-        return InitializationResult(
-            player_agents=player_agents,
-            team_baseline=team_baseline,
-            manager_agent=manager_agent,
-            fixture_list=fixture_list,
-            opponent_strengths=opponent_strengths,
-            league_context=league_context,
-        )
-    except Exception:
-        return None
-    finally:
-        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -449,72 +257,27 @@ def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
 # ---------------------------------------------------------------------------
 
 
-def _run_pipeline(params: SimulationParams) -> bool:
-    """Execute the full pipeline, cache results in session_state, and display.
+def _run_pipeline(scenario: ScenarioDefinition) -> bool:
+    """Execute scenario comparison and display results.
 
     Returns True on success, False on failure.
     """
-    progress = st.progress(0, text="Initializing...")
+    db = _open_season_db()
+    if db is None:
+        st.error("Season cache not available.")
+        return False
 
-    # 1. Initialize agents (try cache first, then StatsBomb API).
-    init_result = _load_from_cache(params)
-    if init_result is not None:
-        st.caption("Loaded from demo cache.")
-    else:
-        collector = StatsBombOpenDataCollector()
-        try:
-            init_result = initialize(
-                collector=collector,
-                competition_id=params.competition_id,
-                season_id=params.season_id,
-                team_name=params.team_name,
-                manager_name=params.manager_name,
-                trigger_week=params.trigger_week,
-                league_name=f"Competition {params.competition_id}",
-            )
-        except Exception as e:
-            st.error(f"Initialization failed: {e}")
-            return False
+    progress = st.progress(0, text="Loading team data...")
 
-    progress.progress(30, text="Running simulation...")
-
-    # 2. Build trigger.
-    trigger: ChangeTrigger
-    incoming_profile: ManagerAgent | None = None
-
-    if params.trigger_type == "transfer_in":
-        trigger = _build_transfer_trigger(params)
-    else:
-        incoming_profile = resolve_incoming_profile(
-            params.incoming_manager_name,
-            params.competition_id,
-            params.season_id,
-            cache_dir=_CACHE_DIR,
-        )
-        trigger = ManagerChangeTrigger(
-            outgoing_manager_name=params.manager_name,
-            incoming_manager_name=params.incoming_manager_name,
-            transition_type="mid_season",
-            applied_at=params.trigger_week,
-            incoming_profile=incoming_profile,
-        )
-
-    # 3. Run comparison.
+    n_runs: int = st.session_state.get("_n_runs", _DEFAULT_N_RUNS)
+    seed: int = st.session_state.get("_seed", _DEFAULT_SEED)
     rules = SimulationRules.load(_RULES_DIR)
-    handler = RuleBasedHandler(rules)
+
+    progress.progress(10, text="Running simulation...")
 
     try:
-        comparison = run_comparison(
-            team=init_result.team_baseline,
-            squad=init_result.player_agents,
-            manager=init_result.manager_agent,
-            fixture_list=init_result.fixture_list,
-            opponent_strengths=init_result.opponent_strengths,
-            rules=rules,
-            handler=handler,
-            trigger=trigger,
-            n_runs=params.n_runs,
-            rng_seed=params.seed,
+        comparison = run_scenario(
+            scenario, db, rules, n_runs=n_runs, rng_seed=seed,
         )
     except Exception as e:
         st.error(f"Simulation failed: {e}")
@@ -522,54 +285,82 @@ def _run_pipeline(params: SimulationParams) -> bool:
 
     progress.progress(70, text="Generating visualizations...")
 
-    # 4. Compute player impacts.
+    # Compute player impacts.
     impacts = rank_player_impact(comparison, top_n=_DEFAULT_TOP_PLAYERS)
 
-    # 5. Cache results in session_state for rerun display.
+    # Load state for radar chart.
+    try:
+        state = load_team_season_state(
+            db, scenario.team_name, _COMP_ID, _SEASON_ID
+        )
+    except Exception:
+        state = None
+
+    # Resolve incoming manager profile for radar.
+    incoming_profile: ManagerAgent | None = None
+    if scenario.scenario_type == "manager_change" and scenario.alt_manager_name:
+        if scenario.alt_manager_team_name:
+            incoming_profile = db.load_manager_agent(
+                scenario.alt_manager_name,
+                scenario.alt_manager_team_name,
+                _COMP_ID, _SEASON_ID,
+            )
+        else:
+            rows = db._conn.execute(  # noqa: SLF001
+                "SELECT manager_name, team_name FROM manager_agents "
+                "WHERE manager_name=? AND competition_id=? AND season_id=?",
+                (scenario.alt_manager_name, _COMP_ID, _SEASON_ID),
+            ).fetchall()
+            if rows:
+                incoming_profile = db.load_manager_agent(
+                    str(rows[0]["manager_name"]),
+                    str(rows[0]["team_name"]),
+                    _COMP_ID, _SEASON_ID,
+                )
+
+    # Cache in session.
     st.session_state["_sim_comparison"] = comparison
-    st.session_state["_sim_init_result"] = init_result
     st.session_state["_sim_impacts"] = impacts
+    st.session_state["_sim_state"] = state
     st.session_state["_sim_incoming_profile"] = incoming_profile
 
     progress.progress(100, text="Complete.")
 
-    # 6. Display results.
-    _display_results(comparison, params, init_result, impacts, incoming_profile)
+    _display_results(comparison, scenario, impacts, state, incoming_profile)
     return True
+
+
+# ---------------------------------------------------------------------------
+# Display helpers
+# ---------------------------------------------------------------------------
 
 
 def _display_cached_results() -> None:
     """Display results from session_state without recomputing."""
-    params: SimulationParams = st.session_state["_sim_params"]
+    scenario: ScenarioDefinition = st.session_state["_sim_scenario"]
     comparison: ComparisonResult = st.session_state["_sim_comparison"]
-    init_result: InitializationResult = st.session_state["_sim_init_result"]
     impacts: list[PlayerImpact] = st.session_state["_sim_impacts"]
-    incoming_profile: ManagerAgent | None = st.session_state["_sim_incoming_profile"]
+    state = st.session_state.get("_sim_state")
+    incoming_profile: ManagerAgent | None = st.session_state.get("_sim_incoming_profile")
 
-    _display_results(comparison, params, init_result, impacts, incoming_profile)
+    _display_results(comparison, scenario, impacts, state, incoming_profile)
 
 
 def _display_results(
     comparison: ComparisonResult,
-    params: SimulationParams,
-    init_result: InitializationResult,
+    scenario: ScenarioDefinition,
     impacts: list[PlayerImpact],
+    state: object | None,
     incoming_profile: ManagerAgent | None,
 ) -> None:
-    """Render all output sections from precomputed results."""
+    """Render all output sections."""
     llm_client = _get_llm_client()
 
-    _render_summary(comparison, params, impacts)
-    _render_player_impact(impacts, params)
-    _render_report(comparison, params, impacts, llm_client)
-    if params.trigger_type == "manager_change":
-        _render_team_radar(comparison, init_result, incoming_profile)
-    else:
-        st.header("Team Comparison")
-        st.info(
-            "Team radar chart is not applicable for transfer triggers. "
-            "Tactical estimates are manager-driven and unchanged by player transfers."
-        )
+    _render_summary(comparison, scenario, impacts)
+    _render_player_impact(impacts)
+    _render_report(comparison, scenario, impacts, llm_client)
+    if scenario.scenario_type == "manager_change" and state is not None:
+        _render_team_radar(comparison, state, incoming_profile)
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +388,7 @@ def _get_llm_client() -> LLMClient | None:
 
 def _render_summary(
     comparison: ComparisonResult,
-    params: SimulationParams,
+    scenario: ScenarioDefinition,
     impacts: list[PlayerImpact],
 ) -> None:
     """Display one-line conclusion + key metrics."""
@@ -611,26 +402,31 @@ def _render_summary(
     else:
         direction = "marginal"
 
-    # One-line conclusion (varies by trigger type).
     top_player = impacts[0].player_name if impacts else "no player"
     n_runs = len(comparison.no_change.run_results) or comparison.no_change.n_runs
 
-    if params.trigger_type == "transfer_in":
+    if scenario.scenario_type == "manager_change":
         headline = (
-            f"**{params.team_name}**: Signing {params.transfer_player_name} "
-            f"shows a **{direction}** impact. Most affected: **{top_player}**."
+            f"**{scenario.team_name}**: What if {scenario.alt_manager_name} "
+            f"managed the team? **{direction}** impact. "
+            f"Most affected: **{top_player}**."
+        )
+    elif scenario.scenario_type == "player_add":
+        headline = (
+            f"**{scenario.team_name}**: What if {scenario.player_name} "
+            f"joined? **{direction}** impact. "
+            f"Most affected: **{top_player}**."
         )
     else:
         headline = (
-            f"**{params.team_name}**: Dismissing {params.manager_name} shows a "
+            f"**{scenario.team_name}**: What if without {scenario.player_name}? "
             f"**{direction}** impact. Most affected: **{top_player}**."
         )
 
-    # Summary card.
     with st.container(border=True):
         st.markdown(headline)
         st.caption(
-            f"Points below are mean total points across remaining fixtures over {n_runs} simulation runs."
+            f"Points are mean total across 38 fixtures over {n_runs} simulation runs."
         )
         col1, col2, col3 = st.columns(3)
         col1.metric(
@@ -649,24 +445,30 @@ def _render_summary(
 
 def _render_team_radar(
     comparison: ComparisonResult,
-    init_result: InitializationResult,
+    state: object,
     incoming_profile: ManagerAgent | None,
 ) -> None:
     """Display team radar chart."""
+    from iffootball.scenario import TeamSeasonState
+
+    if not isinstance(state, TeamSeasonState):
+        return
+
     st.header("Team Comparison")
-    st.caption(
-        "Detailed view for deeper analysis. "
-        "Tactical estimates use neutral defaults for the incoming manager."
-    )
+    st.caption("Tactical estimates for baseline vs alternative manager.")
+
+    league_ctx = None
+    db = _open_season_db()
+    if db is not None:
+        league_ctx = db.load_league_context(_COMP_ID, _SEASON_ID)
+
+    if league_ctx is None:
+        return
 
     radar_data = extract_radar_data(
-        comparison,
-        init_result.team_baseline,
-        incoming_profile,
-        init_result.league_context,
+        comparison, state.baseline, incoming_profile, league_ctx,
     )
     fig = create_radar_figure(radar_data)
-    # Center the chart at player-radar width (1/3 of page).
     _, center, _ = st.columns(3)
     with center:
         st.pyplot(fig)
@@ -679,7 +481,6 @@ def _impact_direction(impact: PlayerImpact) -> tuple[str, str]:
     trust_diff = impact.mean_trust_b - impact.mean_trust_a
     understanding_diff = impact.mean_understanding_b - impact.mean_understanding_a
 
-    # Determine overall direction from form change.
     if form_diff > 0.02:
         arrow = "▲"
     elif form_diff < -0.02:
@@ -687,7 +488,6 @@ def _impact_direction(impact: PlayerImpact) -> tuple[str, str]:
     else:
         arrow = "─"
 
-    # Pick the most notable change for the one-line reason.
     changes: list[tuple[float, str]] = [
         (abs(form_diff), f"form {'up' if form_diff > 0 else 'down'}"),
         (abs(trust_diff), f"trust {'gained' if trust_diff > 0 else 'lost'}"),
@@ -702,34 +502,20 @@ def _impact_direction(impact: PlayerImpact) -> tuple[str, str]:
     return arrow, reason
 
 
-def _render_player_impact(
-    impacts: list[PlayerImpact],
-    params: SimulationParams,
-) -> None:
+def _render_player_impact(impacts: list[PlayerImpact]) -> None:
     """Display player impact radar charts."""
     st.header("Player Impact")
 
-    if params.trigger_type == "transfer_in":
-        st.caption(
-            "Transfer trigger: the new signing only exists in the 'with change' "
-            "branch, so they are shown separately below. Existing player rankings "
-            "reflect indirect effects of the squad addition."
-        )
-        # Show new signing info (with-change branch only).
-        _render_transfer_player_info(params)
-
     if not impacts:
-        st.info("No significant player impact detected among existing squad.")
+        st.info("No significant player impact detected.")
         return
 
-    # Direction arrows + one-line reason for each player.
     for impact in impacts:
         arrow, reason = _impact_direction(impact)
         st.markdown(f"{arrow} **{impact.player_name}** — {reason}")
 
     st.divider()
 
-    # Horizontal radar layout: one column per player.
     cols = st.columns(len(impacts))
     for col, impact in zip(cols, impacts):
         with col:
@@ -740,43 +526,31 @@ def _render_player_impact(
             plt.close(fig)
 
 
-def _render_transfer_player_info(params: SimulationParams) -> None:
-    """Display a summary card for the transferred player."""
-    st.subheader(f"Simulated Signing: {params.transfer_player_name}")
-    st.write(
-        f"- **Simulated role:** {params.transfer_expected_role}\n"
-        f"- **Available from:** week {params.trigger_week + 1} (simulated)\n"
-        f"- **Attributes:** neutral (50th percentile) — no StatsBomb data\n"
-        f"- **Note:** This is a hypothetical signing. The player only exists "
-        f"in the 'with change' branch only and is not included in the impact ranking above."
-    )
-
-
 def _render_report(
     comparison: ComparisonResult,
-    params: SimulationParams,
+    scenario: ScenarioDefinition,
     impacts: list[PlayerImpact],
     llm_client: LLMClient | None,
 ) -> None:
-    """Display the comparison report.
-
-    Uses LLM-generated report when a client is available, otherwise
-    falls back to a data-only structured report.
-    """
+    """Display the comparison report."""
     st.header("Detailed Analysis")
 
-    if params.trigger_type == "transfer_in":
+    if scenario.scenario_type == "manager_change":
         trigger_desc = (
-            f"Simulated transfer: {params.transfer_player_name} "
-            f"({params.transfer_expected_role}) joining at week {params.trigger_week}"
+            f"Season-start scenario: {scenario.alt_manager_name} "
+            f"replaces the baseline manager at {scenario.team_name}"
+        )
+    elif scenario.scenario_type == "player_add":
+        trigger_desc = (
+            f"Season-start scenario: {scenario.player_name} "
+            f"joins {scenario.team_name} ({scenario.expected_role})"
         )
     else:
         trigger_desc = (
-            f"Simulated manager change: {params.manager_name} -> "
-            f"{params.incoming_manager_name} at week {params.trigger_week}"
+            f"Season-start scenario: {scenario.team_name} "
+            f"without {scenario.player_name}"
         )
 
-    # Build player impact entries.
     player_entries = [
         PlayerImpactEntry(
             player_name=p.player_name,
@@ -803,20 +577,16 @@ def _render_report(
 
     if llm_client is not None:
         st.caption(
-            "Generating report via LLM. Scenario data (team names, player "
-            "names, simulation results) is sent to the configured provider. "
-            "Data handling follows the provider's policy."
+            "Generating report via LLM. Scenario data is sent to the configured provider."
         )
         try:
             report_md = generate_report(llm_client, report_input)
-            # Strip Summary section — already shown at page top.
             report_md = _strip_summary_section(report_md)
             st.markdown(report_md)
             return
         except Exception:
             st.warning("LLM report generation failed. Falling back to data report.")
 
-    # Fallback: data-only report.
     _render_data_report(report_input)
 
 
@@ -826,26 +596,19 @@ def _strip_summary_section(report_md: str) -> str:
     if summary_heading not in report_md:
         return report_md
 
-    # Find Summary heading and the next ## heading after it.
     start = report_md.index(summary_heading)
     rest = report_md[start + len(summary_heading) :]
     next_heading = rest.find("\n## ")
     if next_heading == -1:
-        # Summary is the only section — return empty.
         return report_md[:start].strip()
-    # Remove from Summary heading to the next heading.
     return (report_md[:start] + rest[next_heading + 1 :]).strip()
 
 
 def _render_data_report(report_input: ReportInput) -> None:
-    """Render a structured report from data without LLM.
-
-    Summary and Player Impact are rendered separately above, so this
-    section covers Key Differences, Causal Chain, and Limitations only.
-    """
+    """Render a structured report from data without LLM."""
     st.subheader("Key Differences")
     st.caption(
-        f"Mean total points across remaining fixtures over "
+        f"Mean total points across 38 fixtures over "
         f"{report_input.n_runs} simulation runs."
     )
     st.write(
@@ -857,23 +620,12 @@ def _render_data_report(report_input: ReportInput) -> None:
         st.write(f"- {event_type}: {diff:+.2f} /run [data]")
 
     st.subheader("Causal Chain")
-    if report_input.action_explanations:
-        for a in report_input.action_explanations:
-            st.write(
-                f"- **{a.tp_type} -> {a.action}**: "
-                f"{a.explanation} [{a.label}]"
-            )
+    if report_input.cascade_count_diff:
+        for et, diff in report_input.cascade_count_diff.items():
+            direction = "increased by" if diff > 0 else "decreased by"
+            st.write(f"- **{et}** {direction} {abs(diff):.1f} /run [data]")
     else:
-        if report_input.cascade_count_diff:
-            st.write(
-                "Causal chain summary from cascade event frequencies "
-                "(LLM-based detailed analysis available with API key):"
-            )
-            for et, diff in report_input.cascade_count_diff.items():
-                direction = "increased by" if diff > 0 else "decreased by"
-                st.write(f"- **{et}** {direction} {abs(diff):.1f} /run [data]")
-        else:
-            st.write("No cascade events recorded in this simulation.")
+        st.write("No cascade events recorded.")
 
     st.subheader("Limitations")
     for limitation in report_input.limitations:
@@ -885,14 +637,11 @@ def _render_data_report(report_input: ReportInput) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _params_key(params: SimulationParams) -> str:
-    """Create a hashable key from simulation params for session caching."""
-    return (
-        f"{params.competition_id}_{params.season_id}_{params.team_name}_"
-        f"{params.manager_name}_{params.trigger_week}_{params.trigger_type}_"
-        f"{params.incoming_manager_name}_{params.transfer_player_name}_"
-        f"{params.transfer_expected_role}_{params.n_runs}_{params.seed}"
-    )
+def _scenario_key(scenario: ScenarioDefinition) -> str:
+    """Create a hashable key from scenario for session caching."""
+    n_runs = st.session_state.get("_n_runs", _DEFAULT_N_RUNS)
+    seed = st.session_state.get("_seed", _DEFAULT_SEED)
+    return f"{scenario.scenario_key}_{n_runs}_{seed}"
 
 
 def main() -> None:
@@ -909,25 +658,21 @@ def main() -> None:
         "Results should not be used for real-world decision-making."
     )
 
-    # Input: buttons store params in session_state.
-    new_params = _render_input()
+    new_scenario = _render_input()
 
-    if new_params is not None:
-        # New simulation requested — compute and cache.
-        key = _params_key(new_params)
+    if new_scenario is not None:
+        key = _scenario_key(new_scenario)
         if st.session_state.get("_sim_key") != key:
-            success = _run_pipeline(new_params)
+            success = _run_pipeline(new_scenario)
             if success:
                 st.session_state["_sim_key"] = key
-                st.session_state["_sim_params"] = new_params
+                st.session_state["_sim_scenario"] = new_scenario
         else:
-            # Same params — just display cached results.
             _display_cached_results()
-    elif "_sim_params" in st.session_state:
-        # No new button press — display previous results.
+    elif "_sim_scenario" in st.session_state:
         _display_cached_results()
     else:
-        st.info("Select a scenario above or build a custom one to start.")
+        st.info("Select a team and scenario above to start.")
 
 
 if __name__ == "__main__":

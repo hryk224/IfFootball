@@ -52,14 +52,17 @@ class ScenarioDefinition:
     manager_agents table (season-start manager for the team).
 
     Attributes:
-        team_name:        Target team (StatsBomb spelling).
-        competition_id:   StatsBomb competition ID.
-        season_id:        StatsBomb season ID.
-        scenario_type:    One of "manager_change", "player_add", "player_remove".
-        alt_manager_name: Incoming manager (manager_change only).
-        player_id:        Target player ID (player_add / player_remove).
-        player_name:      Target player display name (player_add / player_remove).
-        expected_role:    Role for incoming player (player_add only).
+        team_name:             Target team (StatsBomb spelling).
+        competition_id:        StatsBomb competition ID.
+        season_id:             StatsBomb season ID.
+        scenario_type:         One of "manager_change", "player_add", "player_remove".
+        alt_manager_name:      Incoming manager name (manager_change only).
+        alt_manager_team_name: Team the incoming manager is sourced from.
+                               Required for unique profile resolution when
+                               multiple managers share the same name.
+        player_id:             Target player ID (player_add / player_remove).
+        player_name:           Target player display name (player_add / player_remove).
+        expected_role:         Role for incoming player (player_add only).
     """
 
     team_name: str
@@ -67,6 +70,7 @@ class ScenarioDefinition:
     season_id: int
     scenario_type: Literal["manager_change", "player_add", "player_remove"]
     alt_manager_name: str | None = None
+    alt_manager_team_name: str | None = None
     player_id: int | None = None
     player_name: str | None = None
     expected_role: str | None = None  # "starter" / "rotation" / "squad"
@@ -195,21 +199,30 @@ def _build_manager_change_trigger(
     assert scenario.alt_manager_name is not None
 
     # Resolve incoming manager profile from DB (candidate master).
-    conn = db._conn  # noqa: SLF001
-    rows = conn.execute(
-        "SELECT manager_name, team_name FROM manager_agents "
-        "WHERE manager_name=? AND competition_id=? AND season_id=?",
-        (scenario.alt_manager_name, scenario.competition_id, scenario.season_id),
-    ).fetchall()
-
+    # Use alt_manager_team_name for unique resolution when available.
     incoming_profile: ManagerAgent | None = None
-    if rows:
+    if scenario.alt_manager_team_name:
         incoming_profile = db.load_manager_agent(
-            str(rows[0]["manager_name"]),
-            str(rows[0]["team_name"]),
+            scenario.alt_manager_name,
+            scenario.alt_manager_team_name,
             scenario.competition_id,
             scenario.season_id,
         )
+    else:
+        # Fallback: search by name only (first match).
+        conn = db._conn  # noqa: SLF001
+        rows = conn.execute(
+            "SELECT manager_name, team_name FROM manager_agents "
+            "WHERE manager_name=? AND competition_id=? AND season_id=?",
+            (scenario.alt_manager_name, scenario.competition_id, scenario.season_id),
+        ).fetchall()
+        if rows:
+            incoming_profile = db.load_manager_agent(
+                str(rows[0]["manager_name"]),
+                str(rows[0]["team_name"]),
+                scenario.competition_id,
+                scenario.season_id,
+            )
 
     return ManagerChangeTrigger(
         outgoing_manager_name=baseline_manager_name,
