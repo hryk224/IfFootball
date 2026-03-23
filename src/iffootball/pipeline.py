@@ -2,10 +2,9 @@
 
 Orchestrates: StatsBomb collection -> converters -> LLM queries -> storage.
 
-Data is split into three scopes to prevent future leakage:
-  - target-team pre-trigger: PlayerAgent, TeamBaseline, ManagerAgent
-  - league-wide pre-trigger: OpponentStrength, LeagueContext
-  - full-season matches: FixtureList (metadata only, no events)
+Two entry points:
+  initialize()        — single team, pre-trigger scoped (legacy)
+  initialize_season() — all teams, full-season retrospective (season cache)
 """
 
 from __future__ import annotations
@@ -24,8 +23,11 @@ from iffootball.collectors.statsbomb import StatsBombDataSource
 from iffootball.converters.fixture_stats import (
     build_all_opponent_strengths,
     build_fixture_list,
+    build_opponent_strength,
+    calc_elo_ratings,
 )
 from iffootball.converters.manager_stats import (
+    _parse_managers,
     build_manager_agent,
     calc_cultural_inertia,
 )
@@ -356,4 +358,234 @@ def initialize(
         fixture_list=fixture_list,
         opponent_strengths=opponent_strengths,
         league_context=league_context,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Season-wide initialization
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SeasonInitResult:
+    """Summary of a season-wide initialization.
+
+    Lightweight result — the actual data is persisted to the DB.
+    This just reports what was built.
+    """
+
+    teams: list[str]
+    player_count: int
+    manager_count: int
+    opponent_count: int
+
+
+def _resolve_season_start_manager(
+    matches: pd.DataFrame,
+    team_name: str,
+) -> str | None:
+    """Return the manager name at the team's first match of the season.
+
+    Uses the earliest match_week for this team and reads the corresponding
+    manager field. If a match has multiple managers (comma-separated
+    transition record), the first name is used.
+
+    Returns None if no matches or no manager data found.
+    """
+    team_mask = (
+        (matches["home_team"] == team_name)
+        | (matches["away_team"] == team_name)
+    )
+    team_matches = matches[team_mask].sort_values(
+        ["match_week", "match_id"]
+    )
+    if team_matches.empty:
+        return None
+
+    first = team_matches.iloc[0]
+    if first["home_team"] == team_name:
+        mgr_field = first.get("home_managers", "")
+    else:
+        mgr_field = first.get("away_managers", "")
+
+    names = _parse_managers(mgr_field)
+    return names[0] if names else None
+
+
+def _extract_all_managers(
+    matches: pd.DataFrame,
+) -> list[tuple[str, str]]:
+    """Return all (manager_name, team_name) pairs from the season.
+
+    Scans both home and away manager fields across all matches.
+    Each unique (manager, team) pair appears once.
+    """
+    seen: dict[tuple[str, str], None] = {}
+    for _, row in matches.iterrows():
+        for side, mgr_col in [
+            ("home_team", "home_managers"),
+            ("away_team", "away_managers"),
+        ]:
+            team = str(row[side])
+            for mgr in _parse_managers(row.get(mgr_col, "")):
+                key = (mgr, team)
+                if key not in seen:
+                    seen[key] = None
+    return list(seen.keys())
+
+
+def initialize_season(
+    collector: StatsBombDataSource,
+    competition_id: int,
+    season_id: int,
+    league_name: str,
+    db: Database,
+    *,
+    progress_fn: object | None = None,
+) -> SeasonInitResult:
+    """Build season cache for all teams and persist to DB.
+
+    Constructs full-season retrospective data for every team in the
+    competition/season:
+      - PlayerAgent (per team, full-season stats)
+      - TeamBaseline (per team, full-season standings)
+      - ManagerAgent (all managers as candidate master)
+      - FixtureList (per team, full-season fixtures)
+      - OpponentStrength (season-static profile from full-season data)
+      - LeagueContext (one per competition/season)
+
+    opponent_strengths are season-static profiles derived from full-season
+    realized data, not time-point snapshots. They represent each team's
+    retrospective attacking/defensive strength across the entire season.
+
+    LLM enrichment is not performed (bulk generation is impractical).
+
+    Args:
+        collector:      StatsBomb data source.
+        competition_id: StatsBomb competition ID.
+        season_id:      StatsBomb season ID.
+        league_name:    Human-readable league name.
+        db:             Database for persistence (required).
+        progress_fn:    Optional callback(team_name, index, total) for
+                        progress reporting. Not typed to avoid coupling.
+    """
+    # -- 1. Full-season matches --
+    all_matches = collector.get_matches(competition_id, season_id)
+    all_teams = sorted(
+        set(all_matches["home_team"]) | set(all_matches["away_team"])
+    )
+    max_week = int(all_matches["match_week"].max())
+
+    # -- 2. Full-season events and lineups --
+    all_match_ids = set(int(mid) for mid in all_matches["match_id"])
+    all_events = _collect_events(collector, all_match_ids)
+    all_lineups = _collect_lineups(collector, all_match_ids)
+
+    total_players = 0
+    total_managers = 0
+
+    # -- 3. Per-team construction --
+    for i, team in enumerate(all_teams):
+        if progress_fn is not None:
+            progress_fn(team, i + 1, len(all_teams))  # type: ignore[operator]
+
+        # Filter events to this team's matches
+        team_matches = _filter_team_matches(all_matches, team)
+        team_match_ids = set(int(mid) for mid in team_matches["match_id"])
+        team_events = all_events[
+            all_events["match_id"].isin(team_match_ids)
+        ].copy()
+
+        # Team lineups (subset of all_lineups)
+        team_lineups_by_match = {
+            mid: all_lineups[mid]
+            for mid in sorted(team_match_ids)
+            if mid in all_lineups
+        }
+        team_merged_lineups = _merge_lineups(team_lineups_by_match)
+
+        # PlayerAgent
+        players = build_player_agents(
+            team_events, team_merged_lineups, team_name=team
+        )
+        db.save_player_agents(players, competition_id, season_id)
+        total_players += len(players)
+
+        # FixtureList (full season)
+        fixture_list = build_fixture_list(all_matches, team)
+        db.save_fixture_list(fixture_list, competition_id, season_id)
+
+        # TeamBaseline
+        baseline = build_team_baseline(
+            team_events,
+            all_matches,
+            team,
+            frozenset(team_match_ids),
+            competition_id,
+            season_id,
+        )
+        # Resolve baseline manager for cultural_inertia
+        start_mgr = _resolve_season_start_manager(all_matches, team)
+        if start_mgr is not None:
+            from iffootball.converters.manager_stats import (
+                extract_manager_tenure,
+            )
+            tenure_ids = extract_manager_tenure(all_matches, team, start_mgr)
+            baseline = dataclasses.replace(
+                baseline,
+                cultural_inertia=calc_cultural_inertia(len(tenure_ids)),
+            )
+        db.save_team_baseline(baseline)
+
+    # -- 4. All managers (candidate master) --
+    all_manager_pairs = _extract_all_managers(all_matches)
+    for mgr_name, mgr_team in all_manager_pairs:
+        team_matches = _filter_team_matches(all_matches, mgr_team)
+        team_match_ids = set(int(mid) for mid in team_matches["match_id"])
+        team_events = all_events[
+            all_events["match_id"].isin(team_match_ids)
+        ].copy()
+        team_lineups_by_match = {
+            mid: all_lineups[mid]
+            for mid in sorted(team_match_ids)
+            if mid in all_lineups
+        }
+        mgr = build_manager_agent(
+            team_events,
+            team_matches,
+            team_lineups_by_match,
+            mgr_team,
+            mgr_name,
+            competition_id,
+            season_id,
+        )
+        db.save_manager_agent(mgr)
+        total_managers += 1
+
+    # -- 5. Opponent strengths (season-static profiles) --
+    # Use full-season data: all events + max match_week for Elo.
+    elo_ratings = calc_elo_ratings(all_matches, max_week)
+    for team in all_teams:
+        opp = build_opponent_strength(
+            all_events, all_matches, team, max_week, elo_ratings
+        )
+        db.save_opponent_strengths(
+            {team: opp}, competition_id, season_id
+        )
+
+    # -- 6. LeagueContext --
+    league_context = build_league_context(
+        all_events,
+        all_matches,
+        competition_id,
+        season_id,
+        league_name,
+    )
+    db.save_league_context(league_context)
+
+    return SeasonInitResult(
+        teams=all_teams,
+        player_count=total_players,
+        manager_count=total_managers,
+        opponent_count=len(all_teams),
     )
