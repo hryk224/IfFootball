@@ -1,8 +1,8 @@
 """Convert StatsBomb matches/events data into FixtureList and OpponentStrength.
 
 Pipeline:
-  1. build_fixture_list()           — remaining fixtures after trigger_week
-  2. calc_elo_ratings()             — Elo ratings for all teams up to trigger_week
+  1. build_fixture_list()           — team fixtures (full season or filtered)
+  2. calc_elo_ratings()             — Elo ratings for all teams up to a cutoff week
   3. build_opponent_strength()      — xG + Elo → OpponentStrength per opponent
   4. build_all_opponent_strengths() — batch-build for all opponents in FixtureList
 
@@ -14,7 +14,7 @@ Elo specification (M1):
                    actual   : win=1.0, draw=0.5, loss=0.0
   Processing order: match_week ascending, then match_id ascending within the
                     same week (deterministic).
-  Snapshot scope : only matches with match_week <= trigger_week are used.
+  Snapshot scope : only matches with match_week <= cutoff week are used.
 """
 
 from __future__ import annotations
@@ -37,31 +37,32 @@ _ELO_K = 20.0
 def build_fixture_list(
     matches: pd.DataFrame,
     team_name: str,
-    trigger_week: int,
+    after_week: int | None = None,
 ) -> FixtureList:
-    """Return remaining fixtures for team_name after trigger_week.
+    """Return fixtures for team_name, optionally filtered by week.
 
-    Only matches with match_week > trigger_week are included.
     Fixtures are sorted by match_week ascending, then match_id ascending
     within the same week for deterministic ordering.
 
     Args:
-        matches:      Matches DataFrame for the full competition/season.
-                      Must include match_id, match_week, home_team, away_team.
-        team_name:    StatsBomb team name of the simulated team.
-        trigger_week: Trigger injection point. Fixtures at this week and
-                      earlier are excluded (the trigger takes effect from
-                      trigger_week + 1).
+        matches:    Matches DataFrame for the full competition/season.
+                    Must include match_id, match_week, home_team, away_team.
+        team_name:  StatsBomb team name of the simulated team.
+        after_week: If provided, only matches with match_week > after_week
+                    are included (post-trigger fixtures). If None, all
+                    matches are included (full-season fixtures).
 
     Returns:
         FixtureList with fixtures sorted by (match_week, match_id).
     """
     team_mask = (matches["home_team"] == team_name) | (matches["away_team"] == team_name)
-    remaining = matches[team_mask & (matches["match_week"] > trigger_week)].copy()
-    remaining = remaining.sort_values(["match_week", "match_id"])
+    team_matches = matches[team_mask].copy()
+    if after_week is not None:
+        team_matches = team_matches[team_matches["match_week"] > after_week]
+    team_matches = team_matches.sort_values(["match_week", "match_id"])
 
     fixtures: list[Fixture] = []
-    for _, row in remaining.iterrows():
+    for _, row in team_matches.iterrows():
         is_home = bool(row["home_team"] == team_name)
         opponent_name = str(row["away_team"] if is_home else row["home_team"])
         fixtures.append(
@@ -74,7 +75,6 @@ def build_fixture_list(
 
     return FixtureList(
         team_name=team_name,
-        trigger_week=trigger_week,
         fixtures=tuple(fixtures),
     )
 
@@ -192,6 +192,7 @@ def build_all_opponent_strengths(
     events: pd.DataFrame,
     matches: pd.DataFrame,
     fixture_list: FixtureList,
+    trigger_week: int,
 ) -> dict[str, OpponentStrength]:
     """Build OpponentStrength for every unique opponent in fixture_list.
 
@@ -201,14 +202,14 @@ def build_all_opponent_strengths(
 
     Args:
         events:       Combined events DataFrame for all matches up to
-                      fixture_list.trigger_week.
+                      trigger_week.
         matches:      Matches DataFrame for the full competition/season.
         fixture_list: FixtureList whose opponents will be built.
+        trigger_week: Snapshot point for xG and Elo computation.
 
     Returns:
         Dict mapping opponent_name → OpponentStrength.
     """
-    trigger_week = fixture_list.trigger_week
     elo_ratings = calc_elo_ratings(matches, trigger_week)
 
     unique_opponents = {f.opponent_name for f in fixture_list.fixtures}

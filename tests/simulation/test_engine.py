@@ -151,7 +151,6 @@ def _make_team() -> TeamBaseline:
 def _make_fixture_list() -> FixtureList:
     return FixtureList(
         team_name="Team A",
-        trigger_week=10,
         fixtures=(
             Fixture(match_week=11, opponent_name="Opp A", is_home=True),
             Fixture(match_week=12, opponent_name="Opp B", is_home=False),

@@ -104,7 +104,6 @@ def _make_opponent_strengths() -> dict[str, OpponentStrength]:
 def _make_fixture_list() -> FixtureList:
     return FixtureList(
         team_name="Arsenal",
-        trigger_week=29,
         fixtures=(
             Fixture(match_week=30, opponent_name="Chelsea", is_home=True),
             Fixture(match_week=31, opponent_name="Liverpool", is_home=False),
@@ -455,22 +454,21 @@ class TestFixtureList:
     def test_save_and_load_roundtrip(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert loaded.team_name == fl.team_name
-        assert loaded.trigger_week == fl.trigger_week
 
     def test_fixture_count_preserved(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert len(loaded.fixtures) == 3
 
     def test_fixture_order_preserved_by_ordinal(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert loaded.fixtures[0].opponent_name == "Chelsea"
         assert loaded.fixtures[1].opponent_name == "Liverpool"
@@ -479,7 +477,7 @@ class TestFixtureList:
     def test_fixture_fields_preserved(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         f = loaded.fixtures[0]
         assert f.match_week == 30
@@ -488,39 +486,38 @@ class TestFixtureList:
     def test_is_home_false_preserved(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert loaded.fixtures[1].is_home is False
 
     def test_empty_fixture_list_roundtrip(self, db: Database) -> None:
-        fl = FixtureList(team_name="Arsenal", trigger_week=38, fixtures=())
+        fl = FixtureList(team_name="Arsenal", fixtures=())
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=38)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert loaded.fixtures == ()
 
     def test_returns_none_when_missing(self, db: Database) -> None:
-        assert db.load_fixture_list("Arsenal", 2, 27, trigger_week=99) is None
+        assert db.load_fixture_list("Arsenal", 2, 27) is None
 
     def test_resave_replaces_fixtures(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
         updated = FixtureList(
             team_name="Arsenal",
-            trigger_week=29,
             fixtures=(
                 Fixture(match_week=30, opponent_name="Chelsea", is_home=True),
             ),
         )
         db.save_fixture_list(updated, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         assert len(loaded.fixtures) == 1
 
     def test_loaded_fixture_list_is_frozen(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         with pytest.raises((AttributeError, TypeError)):
             loaded.fixtures = ()  # type: ignore[misc]
@@ -528,7 +525,7 @@ class TestFixtureList:
     def test_loaded_fixture_is_frozen(self, db: Database) -> None:
         fl = _make_fixture_list()
         db.save_fixture_list(fl, competition_id=2, season_id=27)
-        loaded = db.load_fixture_list("Arsenal", 2, 27, trigger_week=29)
+        loaded = db.load_fixture_list("Arsenal", 2, 27)
         assert loaded is not None
         with pytest.raises((AttributeError, TypeError)):
             loaded.fixtures[0].is_home = False  # type: ignore[misc]

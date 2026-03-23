@@ -404,7 +404,6 @@ class TestInitialize:
         # FixtureList has only post-trigger fixtures
         fl = result.fixture_list
         assert fl.team_name == TEAM
-        assert fl.trigger_week == TRIGGER_WEEK
         for f in fl.fixtures:
             assert f.match_week > TRIGGER_WEEK
 
@@ -492,7 +491,7 @@ class TestInitialize:
             assert loaded_ma.manager_name == MANAGER
 
             loaded_fl = db.load_fixture_list(
-                TEAM, COMPETITION_ID, SEASON_ID, TRIGGER_WEEK
+                TEAM, COMPETITION_ID, SEASON_ID
             )
             assert loaded_fl is not None
             assert len(loaded_fl.fixtures) == len(result.fixture_list.fixtures)

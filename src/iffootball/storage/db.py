@@ -125,7 +125,7 @@ class ComparisonResultWithMeta:
 #       to identify the RNG allocation strategy (e.g. paired_split_v1).
 #   4 — Squad coverage: sample_tier column on player_agents to distinguish
 #       FULL (percentile-normalised) from PARTIAL (fallback attributes).
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 class SchemaVersionError(Exception):
@@ -221,20 +221,18 @@ CREATE TABLE IF NOT EXISTS fixture_lists (
     team_name             TEXT    NOT NULL,
     competition_id        INTEGER NOT NULL,
     season_id             INTEGER NOT NULL,
-    trigger_week          INTEGER NOT NULL,
-    PRIMARY KEY (team_name, competition_id, season_id, trigger_week)
+    PRIMARY KEY (team_name, competition_id, season_id)
 );
 
 CREATE TABLE IF NOT EXISTS fixtures (
     team_name             TEXT    NOT NULL,
     competition_id        INTEGER NOT NULL,
     season_id             INTEGER NOT NULL,
-    trigger_week          INTEGER NOT NULL,
     ordinal               INTEGER NOT NULL,
     match_week            INTEGER NOT NULL,
     opponent_name         TEXT    NOT NULL,
     is_home               INTEGER NOT NULL,
-    PRIMARY KEY (team_name, competition_id, season_id, trigger_week, ordinal)
+    PRIMARY KEY (team_name, competition_id, season_id, ordinal)
 );
 
 CREATE TABLE IF NOT EXISTS league_contexts (
@@ -806,14 +804,12 @@ class Database:
             fixture_list.team_name,
             competition_id,
             season_id,
-            fixture_list.trigger_week,
         )
         rows = [
             (
                 fixture_list.team_name,
                 competition_id,
                 season_id,
-                fixture_list.trigger_week,
                 ordinal,
                 f.match_week,
                 f.opponent_name,
@@ -824,18 +820,18 @@ class Database:
         with self._conn:
             self._conn.execute(
                 """
-                INSERT INTO fixture_lists VALUES (?,?,?,?)
-                ON CONFLICT(team_name, competition_id, season_id, trigger_week)
-                DO UPDATE SET trigger_week=excluded.trigger_week
+                INSERT INTO fixture_lists VALUES (?,?,?)
+                ON CONFLICT(team_name, competition_id, season_id)
+                DO NOTHING
                 """,
                 key,
             )
             self._conn.execute(
-                "DELETE FROM fixtures WHERE team_name=? AND competition_id=? AND season_id=? AND trigger_week=?",
+                "DELETE FROM fixtures WHERE team_name=? AND competition_id=? AND season_id=?",
                 key,
             )
             self._conn.executemany(
-                "INSERT INTO fixtures VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO fixtures VALUES (?,?,?,?,?,?,?)",
                 rows,
             )
 
@@ -844,7 +840,6 @@ class Database:
         team_name: str,
         competition_id: int,
         season_id: int,
-        trigger_week: int,
     ) -> FixtureList | None:
         """Load a FixtureList. Returns None if not found.
 
@@ -855,19 +850,19 @@ class Database:
         header = self._conn.execute(
             """
             SELECT 1 FROM fixture_lists
-            WHERE team_name=? AND competition_id=? AND season_id=? AND trigger_week=?
+            WHERE team_name=? AND competition_id=? AND season_id=?
             """,
-            (team_name, competition_id, season_id, trigger_week),
+            (team_name, competition_id, season_id),
         ).fetchone()
         if header is None:
             return None
         rows = self._conn.execute(
             """
             SELECT * FROM fixtures
-            WHERE team_name=? AND competition_id=? AND season_id=? AND trigger_week=?
+            WHERE team_name=? AND competition_id=? AND season_id=?
             ORDER BY ordinal
             """,
-            (team_name, competition_id, season_id, trigger_week),
+            (team_name, competition_id, season_id),
         ).fetchall()
         fixtures = tuple(
             Fixture(
@@ -879,7 +874,6 @@ class Database:
         )
         return FixtureList(
             team_name=team_name,
-            trigger_week=trigger_week,
             fixtures=fixtures,
         )
 

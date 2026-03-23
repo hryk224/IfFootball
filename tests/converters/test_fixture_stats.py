@@ -45,15 +45,15 @@ def _basic_matches() -> pd.DataFrame:
          "home_score": 0, "away_score": 2},
         {"match_id": 4, "match_week": 2, "home_team": "Everton", "away_team": "Arsenal",
          "home_score": 0, "away_score": 1},
-        # week 3 (trigger)
+        # week 3
         {"match_id": 5, "match_week": 3, "home_team": "Arsenal", "away_team": "Liverpool",
          "home_score": 1, "away_score": 0},
-        # week 4 (remaining)
+        # week 4
         {"match_id": 6, "match_week": 4, "home_team": "Chelsea", "away_team": "Arsenal",
          "home_score": 0, "away_score": 0},
         {"match_id": 7, "match_week": 4, "home_team": "Arsenal", "away_team": "Everton",
          "home_score": 3, "away_score": 0},
-        # week 5 (remaining)
+        # week 5
         {"match_id": 8, "match_week": 5, "home_team": "Liverpool", "away_team": "Arsenal",
          "home_score": 2, "away_score": 1},
     ])
@@ -65,27 +65,21 @@ def _basic_matches() -> pd.DataFrame:
 
 
 class TestBuildFixtureList:
-    def test_remaining_fixtures_after_trigger(self) -> None:
+    def test_full_season_fixtures(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        weeks = [f.match_week for f in result.fixtures]
-        assert all(w > 3 for w in weeks)
-
-    def test_fixture_count(self) -> None:
-        matches = _basic_matches()
-        # Arsenal: week4 (away at Chelsea + home vs Everton), week5 (away at Liverpool) = 3
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        assert len(result.fixtures) == 3
+        result = build_fixture_list(matches, "Arsenal")
+        # Arsenal plays in weeks 1,2,3,4(x2),5 = 6 fixtures
+        assert len(result.fixtures) == 6
 
     def test_sorted_by_match_week(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         weeks = [f.match_week for f in result.fixtures]
         assert weeks == sorted(weeks)
 
     def test_same_week_sorted_by_match_id(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         week4 = [f for f in result.fixtures if f.match_week == 4]
         # match_id 6 (away at Chelsea) and 7 (home vs Everton) — match_id 6 first
         assert week4[0].opponent_name == "Chelsea"  # match_id=6, away
@@ -93,51 +87,63 @@ class TestBuildFixtureList:
 
     def test_is_home_flag(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        fixture_map = {f.opponent_name: f.is_home for f in result.fixtures}
-        # match_id=6: Chelsea home, Arsenal away → is_home=False
-        assert fixture_map["Chelsea"] is False
-        # match_id=7: Arsenal home vs Everton → is_home=True
-        assert fixture_map["Everton"] is True
+        result = build_fixture_list(matches, "Arsenal")
+        # match_id=1: Arsenal home vs Chelsea
+        first = result.fixtures[0]
+        assert first.opponent_name == "Chelsea"
+        assert first.is_home is True
+        # match_id=4: Everton home, Arsenal away
+        week2 = [f for f in result.fixtures if f.match_week == 2][0]
+        assert week2.opponent_name == "Everton"
+        assert week2.is_home is False
 
-    def test_trigger_week_excluded(self) -> None:
+    def test_team_name_stored(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        # Arsenal week3: home vs Liverpool — must NOT appear
-        assert not any(f.match_week == 3 for f in result.fixtures)
-
-    def test_team_name_and_trigger_week_stored(self) -> None:
-        matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         assert result.team_name == "Arsenal"
-        assert result.trigger_week == 3
 
     def test_returns_fixture_list(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         assert isinstance(result, FixtureList)
 
     def test_fixtures_is_tuple(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         assert isinstance(result.fixtures, tuple)
 
-    def test_no_remaining_fixtures(self) -> None:
+    def test_team_with_no_matches(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=38)
+        result = build_fixture_list(matches, "NonExistent")
         assert result.fixtures == ()
 
     def test_fixture_list_is_immutable(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal")
         with pytest.raises((AttributeError, TypeError)):
             result.fixtures = ()  # type: ignore[misc]
 
-    def test_fixture_fields_are_immutable(self) -> None:
-        # Fixture itself must be frozen so shared FixtureList elements cannot
-        # be mutated by Branch A or B during simulation.
+    def test_after_week_filters_fixtures(self) -> None:
         matches = _basic_matches()
-        result = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        result = build_fixture_list(matches, "Arsenal", after_week=3)
+        # Only week 4 and 5 fixtures
+        assert all(f.match_week > 3 for f in result.fixtures)
+        assert len(result.fixtures) == 3  # week4 x2 + week5
+
+    def test_after_week_none_returns_all(self) -> None:
+        matches = _basic_matches()
+        full = build_fixture_list(matches, "Arsenal")
+        explicit_none = build_fixture_list(matches, "Arsenal", after_week=None)
+        assert len(full.fixtures) == len(explicit_none.fixtures)
+
+    def test_after_week_beyond_season_returns_empty(self) -> None:
+        matches = _basic_matches()
+        result = build_fixture_list(matches, "Arsenal", after_week=38)
+        assert result.fixtures == ()
+
+    def test_fixture_fields_are_immutable(self) -> None:
+        matches = _basic_matches()
+        result = build_fixture_list(matches, "Arsenal")
         fixture = result.fixtures[0]
         with pytest.raises((AttributeError, TypeError)):
             fixture.is_home = not fixture.is_home  # type: ignore[misc]
@@ -279,23 +285,23 @@ class TestBuildAllOpponentStrengths:
     def test_returns_dict(self) -> None:
         matches = _basic_matches()
         events = _make_events([])
-        fl = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        result = build_all_opponent_strengths(events, matches, fl)
+        fl = build_fixture_list(matches, "Arsenal")
+        result = build_all_opponent_strengths(events, matches, fl, trigger_week=3)
         assert isinstance(result, dict)
 
     def test_keys_are_unique_opponents(self) -> None:
         matches = _basic_matches()
         events = _make_events([])
-        fl = build_fixture_list(matches, "Arsenal", trigger_week=3)
+        fl = build_fixture_list(matches, "Arsenal")
         expected_opponents = {f.opponent_name for f in fl.fixtures}
-        result = build_all_opponent_strengths(events, matches, fl)
+        result = build_all_opponent_strengths(events, matches, fl, trigger_week=3)
         assert set(result) == expected_opponents
 
     def test_values_are_opponent_strength(self) -> None:
         matches = _basic_matches()
         events = _make_events([])
-        fl = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        result = build_all_opponent_strengths(events, matches, fl)
+        fl = build_fixture_list(matches, "Arsenal")
+        result = build_all_opponent_strengths(events, matches, fl, trigger_week=3)
         for v in result.values():
             assert isinstance(v, OpponentStrength)
 
@@ -308,14 +314,14 @@ class TestBuildAllOpponentStrengths:
              "away_team": "Arsenal", "home_score": 0, "away_score": 1},
         ])
         events = _make_events([])
-        fl = build_fixture_list(matches, "Arsenal", trigger_week=3)
-        result = build_all_opponent_strengths(events, matches, fl)
+        fl = build_fixture_list(matches, "Arsenal")
+        result = build_all_opponent_strengths(events, matches, fl, trigger_week=3)
         # Only one entry for Chelsea despite two fixtures
         assert list(result.keys()).count("Chelsea") == 1
 
     def test_empty_fixture_list(self) -> None:
         matches = _basic_matches()
         events = _make_events([])
-        fl = build_fixture_list(matches, "Arsenal", trigger_week=38)
-        result = build_all_opponent_strengths(events, matches, fl)
+        fl = FixtureList(team_name="Arsenal", fixtures=())
+        result = build_all_opponent_strengths(events, matches, fl, trigger_week=38)
         assert result == {}

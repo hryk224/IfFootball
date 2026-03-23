@@ -85,7 +85,6 @@ def _load_from_cache(preset: DemoPreset) -> InitializationResult | None:
             return None
         fixtures = db.load_fixture_list(
             preset.team_name, COMPETITION_ID, SEASON_ID,
-            trigger_week=preset.trigger_week,
         )
         if fixtures is None:
             return None

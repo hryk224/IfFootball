@@ -414,7 +414,6 @@ def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
             params.team_name,
             params.competition_id,
             params.season_id,
-            trigger_week=params.trigger_week,
         )
         if fixture_list is None:
             return None

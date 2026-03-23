@@ -30,22 +30,18 @@ class Fixture:
 
 @dataclass(frozen=True)
 class FixtureList:
-    """Ordered list of remaining fixtures after a trigger point.
+    """Ordered list of fixtures for a team's season.
 
     Frozen and immutable so it can be safely shared between Branch A/B
     without risk of accidental mutation during simulation.
 
     Attributes:
-        team_name:    StatsBomb team name of the simulated team.
-        trigger_week: The match_week at which the trigger was injected.
-                      Only fixtures with match_week > trigger_week are
-                      included.
-        fixtures:     Remaining fixtures sorted by match_week ascending,
-                      then match_id ascending within the same week.
+        team_name: StatsBomb team name of the simulated team.
+        fixtures:  Fixtures sorted by match_week ascending, then
+                   match_id ascending within the same week.
     """
 
     team_name: str
-    trigger_week: int
     fixtures: tuple[Fixture, ...]
 
 

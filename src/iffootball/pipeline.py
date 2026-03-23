@@ -249,7 +249,9 @@ def initialize(
     # -- 1. Full-season matches (metadata only) --
     all_matches = collector.get_matches(competition_id, season_id)
 
-    fixture_list = build_fixture_list(all_matches, team_name, trigger_week)
+    fixture_list = build_fixture_list(
+        all_matches, team_name, after_week=trigger_week
+    )
 
     # -- 2. League-wide pre-trigger scope --
     league_pre_matches = all_matches[
@@ -305,7 +307,7 @@ def initialize(
 
     # -- 6. Build league-wide objects --
     opponent_strengths = build_all_opponent_strengths(
-        league_pre_events, all_matches, fixture_list,
+        league_pre_events, all_matches, fixture_list, trigger_week,
     )
 
     league_context = build_league_context(
