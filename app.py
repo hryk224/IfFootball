@@ -87,7 +87,11 @@ def _load_team_list(db: Database) -> list[str]:
 def _load_manager_candidates(
     db: Database, exclude_team: str,
 ) -> list[tuple[str, str]]:
-    """Get (manager_name, team_name) pairs excluding the target team."""
+    """Get (manager_name, team_name) pairs excluding the target team.
+
+    Candidates are restricted to the same competition/season.
+    Cross-league candidates are not supported in the current model.
+    """
     rows = db._conn.execute(  # noqa: SLF001
         "SELECT manager_name, team_name FROM manager_agents "
         "WHERE competition_id=? AND season_id=? AND team_name != ? "
@@ -100,7 +104,11 @@ def _load_manager_candidates(
 def _load_player_candidates(
     db: Database, exclude_team: str,
 ) -> list[tuple[int, str, str]]:
-    """Get (player_id, player_name, team_name) for other teams."""
+    """Get (player_id, player_name, team_name) for other teams.
+
+    Candidates are restricted to the same competition/season.
+    Cross-league player additions are not supported in the current model.
+    """
     rows = db._conn.execute(  # noqa: SLF001
         "SELECT player_id, player_name, team_name FROM player_agents "
         "WHERE competition_id=? AND season_id=? AND team_name != ? "

@@ -2,9 +2,9 @@
 
 [日本語版はこちら](README.ja.md)
 
-> _"What if Van Gaal had been dismissed after match week 29?"_
+> _"What if Klopp had managed Chelsea from the start of the season?"_
 
-Simulate how managerial changes and player transfers might have altered a football team's season. IfFootball uses StatsBomb Open Data, rule-based causal simulation, and optional LLM-generated analysis. **No API key required to run — LLM is optional.**
+Simulate how a different manager or squad change might have altered a football team's entire season. IfFootball uses StatsBomb Open Data, rule-based causal simulation, and optional LLM-generated analysis. **No API key required to run — LLM is optional.**
 
 ![IfFootball Demo - Preset cards and Summary](docs/images/demo-overview.png)
 ![IfFootball Demo - Player Impact and Detailed Analysis](docs/images/demo-detailed-analysis.png)
@@ -17,29 +17,25 @@ Simulate how managerial changes and player transfers might have altered a footba
 git clone https://github.com/hryk224/IfFootball.git
 cd IfFootball
 uv sync --extra dev
+uv run python scripts/build_season_cache.py   # one-time setup (~5 min)
 uv run streamlit run app.py
 ```
 
-Select **Manchester United**, enter **Louis van Gaal** as the current manager, set trigger week to **29**, and click **Run Simulation**. Results appear in ~2-5 minutes (StatsBomb API fetch on first run).
+Select a team, choose a scenario (manager change, player add, or player remove), pick a candidate from the dropdown, and click **Run Scenario**. All candidates come from the pre-built season cache — no API calls at runtime.
 
 No `.env` file, no API key, no LLM setup needed for the basic experience.
 
 ## Example Output
 
-Backtest: Manchester United — Van Gaal dismissal at week 29 (Premier League 2015-16, 20 simulation runs):
+Season scenario: Chelsea with Klopp instead of Mourinho (Premier League 2015-16, 5 simulation runs):
 
 ```
-Branch A (no change):  12.2 points (mean)  ±3.5
-Branch B (dismissed):  12.8 points (mean)  ±3.2
-Delta (B - A):         +0.5 points
-
-Top 3 impacted players:
-  1. Michael Carrick     (impact: 0.683) — fatigue +0.19, trust +0.13
-  2. Jesse Lingard       (impact: 0.595) — form -0.09, fatigue -0.15
-  3. Ander Herrera       (impact: 0.584) — form -0.12, understanding -0.25
+Branch A (Mourinho):  64.6 points (mean)
+Branch B (Klopp):     56.0 points (mean)
+Delta (B - A):        -8.6 points
 ```
 
-The simulation shows a slight positive trend (+0.5 points) but within statistical uncertainty. All players experienced a tactical understanding reset (-0.25), reflecting the adaptation period after a managerial change. Full analysis in the Streamlit UI includes radar charts and structured reports.
+The simulation compares a full 38-match season under each manager. Tactical profile differences (pressing intensity, possession preference, formation) drive lineup selection and adaptation dynamics. Full analysis in the Streamlit UI includes player impact radar charts and structured reports.
 
 ## Disclaimer
 
@@ -47,8 +43,9 @@ IfFootball is a **what-if simulation tool**, not a prediction engine. Results re
 
 ## Key Features
 
-- **Manager Change** — Simulate mid-season dismissal with tactical profile reset, squad trust recalibration, and adaptation curves
-- **Player Transfer** _(Experimental)_ — Add a player to the squad with role-based trust initialization
+- **Manager Change** — Simulate a full season under a different manager with tactical profile differences, squad trust recalibration, and adaptation curves
+- **Player Add** — Add a player from another team with role-based trust initialization
+- **Player Remove** — Simulate a season without a specific squad member
 - **A/B Comparison** — Poisson match model, weekly state updates (fatigue, trust, tactical understanding), turning point detection with cascade event tracking
 - **Visualization** — Team and player radar charts comparing Branch A/B outcomes
 - **LLM Reports** — Structured comparison reports with data / analysis / hypothesis labels and source classification
@@ -57,30 +54,30 @@ IfFootball is a **what-if simulation tool**, not a prediction engine. Results re
 ### How It Works
 
 ```
-User Input (team, manager, trigger week)
-    |
-    v
-StatsBomb Data --> Agent Initialization (players, manager, team baseline)
-    |
-    v
-Simulation Engine (N runs x 2 branches)
-    |--- Branch A: no change
-    |--- Branch B: trigger applied
-    |
-    v
-Comparison & Visualization (radar charts, cascade events, reports)
+[One-time] build_season_cache.py
+    StatsBomb Data --> Season Cache DB (all teams, full season)
+
+[Runtime] Streamlit UI
+    Team + Scenario Selection (from season cache)
+        |
+        v
+    Simulation Engine (N runs x 2 branches, 38 matches each)
+        |--- Branch A: baseline (real manager/squad)
+        |--- Branch B: scenario applied (alt manager / +player / -player)
+        |
+        v
+    Comparison & Visualization (radar charts, cascade events, reports)
 ```
 
 ## Data Source
 
 IfFootball uses [StatsBomb Open Data](https://github.com/statsbomb/open-data) exclusively. All metrics and terminology follow StatsBomb definitions. No scraping is involved. Attribution and usage terms follow the [StatsBomb Open Data license](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf).
 
-Currently supported competitions (from `config/targets.toml`):
+Currently supported:
 
-| Competition    | Season  | Teams                                                                                              |
-| -------------- | ------- | -------------------------------------------------------------------------------------------------- |
-| Premier League | 2015-16 | Manchester United, Manchester City, Arsenal, Liverpool, Chelsea, Tottenham Hotspur, Leicester City |
-| La Liga        | 2015-16 | Real Madrid, Barcelona, Atletico Madrid                                                            |
+| Competition    | Season  | Teams                                            |
+| -------------- | ------- | ------------------------------------------------ |
+| Premier League | 2015-16 | All 20 teams (season cache includes full league) |
 
 ## Full Setup
 
@@ -123,15 +120,7 @@ Supported providers: OpenAI, Anthropic, Google Gemini, Groq. Without LLM configu
 uv run streamlit run app.py
 ```
 
-Configure parameters in the sidebar (team, manager, trigger week, simulation settings) and click "Run Simulation".
-
-### Backtest Script
-
-```bash
-uv run python scripts/backtest_van_gaal.py
-```
-
-Runs the Van Gaal dismissal scenario (Manchester United, week 29, 20 runs) and outputs results to `output/backtest_van_gaal/results.json`.
+Select a team and scenario, then click "Run Scenario". Season cache must be built first (`scripts/build_season_cache.py`).
 
 ## Design Principles
 
@@ -144,7 +133,7 @@ Runs the Van Gaal dismissal scenario (Manchester United, week 29, 20 runs) and o
 ## Tests
 
 ```bash
-uv run python -m pytest        # 554+ tests
+uv run python -m pytest        # 826+ tests
 uv run python -m ruff check .  # linter
 uv run python -m mypy .        # type checker
 ```

@@ -141,3 +141,4 @@ These are hardcoded in `engine.py` (not yet config-driven), except for `form_dro
 - `pace` and `physicality` player attributes are fixed at 50.0 (neutral) because StatsBomb Open Data does not include sprint speed or physical contact metrics.
 - `consistency` is simulation-stored but not yet connected to lineup selection or match result calculation.
 - The match model uses team-level xG baselines; individual player contribution to xG is not simulated per-match.
+- Manager and player candidates are restricted to the same competition/season. Cross-league scenarios are not supported because player/manager attributes are percentile-normalised within a single league context, and the simulation model does not account for cross-league adaptation costs or tactical context differences.
