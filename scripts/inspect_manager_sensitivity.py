@@ -47,7 +47,7 @@ def _load_init() -> InitializationResult:
         team_baseline = db.load_team_baseline(TEAM, COMP_ID, SEASON_ID)
         manager_agent = db.load_manager_agent(MANAGER, TEAM, COMP_ID, SEASON_ID)
         fixture_list = db.load_fixture_list(TEAM, COMP_ID, SEASON_ID)
-        opponent_strengths = db.load_opponent_strengths(COMP_ID, SEASON_ID, TRIGGER_WEEK)
+        opponent_strengths = db.load_opponent_strengths(COMP_ID, SEASON_ID)
         league_context = db.load_league_context(COMP_ID, SEASON_ID)
         assert player_agents and team_baseline and manager_agent and fixture_list
         assert opponent_strengths and league_context

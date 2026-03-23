@@ -497,7 +497,7 @@ class TestInitialize:
             assert len(loaded_fl.fixtures) == len(result.fixture_list.fixtures)
 
             loaded_os = db.load_opponent_strengths(
-                COMPETITION_ID, SEASON_ID, TRIGGER_WEEK
+                COMPETITION_ID, SEASON_ID
             )
             assert len(loaded_os) == len(result.opponent_strengths)
 

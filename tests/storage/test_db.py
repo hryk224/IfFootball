@@ -409,26 +409,26 @@ class TestManagerAgent:
 class TestOpponentStrengths:
     def test_save_and_load_roundtrip(self, db: Database) -> None:
         strengths = _make_opponent_strengths()
-        db.save_opponent_strengths(strengths, competition_id=2, season_id=27, trigger_week=29)
-        loaded = db.load_opponent_strengths(competition_id=2, season_id=27, trigger_week=29)
+        db.save_opponent_strengths(strengths, competition_id=2, season_id=27)
+        loaded = db.load_opponent_strengths(competition_id=2, season_id=27)
         assert set(loaded.keys()) == {"Chelsea", "Liverpool"}
 
     def test_values_preserved(self, db: Database) -> None:
         strengths = _make_opponent_strengths()
-        db.save_opponent_strengths(strengths, competition_id=2, season_id=27, trigger_week=29)
-        loaded = db.load_opponent_strengths(competition_id=2, season_id=27, trigger_week=29)
+        db.save_opponent_strengths(strengths, competition_id=2, season_id=27)
+        loaded = db.load_opponent_strengths(competition_id=2, season_id=27)
         assert loaded["Chelsea"].elo_rating == pytest.approx(1520.0)
         assert loaded["Liverpool"].xg_for_per90 == pytest.approx(1.8)
 
-    def test_returns_empty_for_missing_trigger(self, db: Database) -> None:
+    def test_returns_empty_for_missing_season(self, db: Database) -> None:
         db.save_opponent_strengths(
-            _make_opponent_strengths(), competition_id=2, season_id=27, trigger_week=29
+            _make_opponent_strengths(), competition_id=2, season_id=27
         )
-        assert db.load_opponent_strengths(competition_id=2, season_id=27, trigger_week=99) == {}
+        assert db.load_opponent_strengths(competition_id=2, season_id=99) == {}
 
     def test_upsert_overwrites(self, db: Database) -> None:
         db.save_opponent_strengths(
-            _make_opponent_strengths(), competition_id=2, season_id=27, trigger_week=29
+            _make_opponent_strengths(), competition_id=2, season_id=27
         )
         updated = {
             "Chelsea": OpponentStrength(
@@ -438,8 +438,8 @@ class TestOpponentStrengths:
                 elo_rating=1600.0,
             )
         }
-        db.save_opponent_strengths(updated, competition_id=2, season_id=27, trigger_week=29)
-        loaded = db.load_opponent_strengths(competition_id=2, season_id=27, trigger_week=29)
+        db.save_opponent_strengths(updated, competition_id=2, season_id=27)
+        loaded = db.load_opponent_strengths(competition_id=2, season_id=27)
         assert loaded["Chelsea"].elo_rating == pytest.approx(1600.0)
         # Liverpool should still be present from the first save
         assert "Liverpool" in loaded

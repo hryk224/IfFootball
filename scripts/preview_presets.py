@@ -89,7 +89,7 @@ def _load_from_cache(preset: DemoPreset) -> InitializationResult | None:
         if fixtures is None:
             return None
         opponents = db.load_opponent_strengths(
-            COMPETITION_ID, SEASON_ID, preset.trigger_week
+            COMPETITION_ID, SEASON_ID
         )
         if not opponents:
             return None
@@ -125,7 +125,6 @@ def _save_to_cache(preset: DemoPreset, init: InitializationResult) -> None:
         db.save_fixture_list(init.fixture_list, COMPETITION_ID, SEASON_ID)
         db.save_opponent_strengths(
             init.opponent_strengths, COMPETITION_ID, SEASON_ID,
-            preset.trigger_week,
         )
         db.save_league_context(init.league_context)
     finally:

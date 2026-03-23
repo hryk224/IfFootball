@@ -6,8 +6,8 @@ Provides a Database class that persists and restores domain objects:
   - PlayerAgent       (one per player per competition/season)
   - TeamBaseline      (one snapshot per team per competition/season)
   - ManagerAgent      (one per manager×team per competition/season)
-  - OpponentStrength  (one per opponent per competition/season/trigger_week)
-  - FixtureList       (one per team per competition/season/trigger_week)
+  - OpponentStrength  (one per opponent per competition/season)
+  - FixtureList       (one per team per competition/season)
   - LeagueContext     (one per competition/season)
 
   M2 simulation results:
@@ -30,8 +30,8 @@ Snapshot policy:
   TeamBaseline and ManagerAgent store one snapshot per
   (team/manager, competition_id, season_id). Re-saving overwrites the
   previous snapshot via UPSERT (ON CONFLICT DO UPDATE).
-  OpponentStrength and FixtureList are scoped to trigger_week so multiple
-  snapshots per season are possible.
+  OpponentStrength and FixtureList store one snapshot per
+  (team/opponent, competition_id, season_id). Re-saving overwrites.
 
 Serialisation:
   frozenset[int]       → TEXT (JSON-encoded sorted list)
@@ -125,7 +125,7 @@ class ComparisonResultWithMeta:
 #       to identify the RNG allocation strategy (e.g. paired_split_v1).
 #   4 — Squad coverage: sample_tier column on player_agents to distinguish
 #       FULL (percentile-normalised) from PARTIAL (fallback attributes).
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 
 class SchemaVersionError(Exception):
@@ -210,11 +210,10 @@ CREATE TABLE IF NOT EXISTS opponent_strengths (
     opponent_name         TEXT    NOT NULL,
     competition_id        INTEGER NOT NULL,
     season_id             INTEGER NOT NULL,
-    trigger_week          INTEGER NOT NULL,
     xg_for_per90          REAL    NOT NULL,
     xg_against_per90      REAL    NOT NULL,
     elo_rating            REAL    NOT NULL,
-    PRIMARY KEY (opponent_name, competition_id, season_id, trigger_week)
+    PRIMARY KEY (opponent_name, competition_id, season_id)
 );
 
 CREATE TABLE IF NOT EXISTS fixture_lists (
@@ -733,20 +732,19 @@ class Database:
         strengths: dict[str, OpponentStrength],
         competition_id: int,
         season_id: int,
-        trigger_week: int,
     ) -> None:
-        """Persist a dict of OpponentStrength snapshots for a trigger point."""
+        """Persist a dict of OpponentStrength snapshots for a season."""
         rows = [
             (
-                s.opponent_name, competition_id, season_id, trigger_week,
+                s.opponent_name, competition_id, season_id,
                 s.xg_for_per90, s.xg_against_per90, s.elo_rating,
             )
             for s in strengths.values()
         ]
         self._conn.executemany(
             """
-            INSERT INTO opponent_strengths VALUES (?,?,?,?,?,?,?)
-            ON CONFLICT(opponent_name, competition_id, season_id, trigger_week) DO UPDATE SET
+            INSERT INTO opponent_strengths VALUES (?,?,?,?,?,?)
+            ON CONFLICT(opponent_name, competition_id, season_id) DO UPDATE SET
                 xg_for_per90=excluded.xg_for_per90,
                 xg_against_per90=excluded.xg_against_per90,
                 elo_rating=excluded.elo_rating
@@ -759,15 +757,14 @@ class Database:
         self,
         competition_id: int,
         season_id: int,
-        trigger_week: int,
     ) -> dict[str, OpponentStrength]:
-        """Load all OpponentStrength snapshots for a trigger point."""
+        """Load all OpponentStrength snapshots for a season."""
         rows = self._conn.execute(
             """
             SELECT * FROM opponent_strengths
-            WHERE competition_id=? AND season_id=? AND trigger_week=?
+            WHERE competition_id=? AND season_id=?
             """,
-            (competition_id, season_id, trigger_week),
+            (competition_id, season_id),
         ).fetchall()
         return {
             str(r["opponent_name"]): OpponentStrength(

@@ -419,7 +419,7 @@ def _load_from_cache(params: SimulationParams) -> InitializationResult | None:
             return None
 
         opponent_strengths = db.load_opponent_strengths(
-            params.competition_id, params.season_id, params.trigger_week
+            params.competition_id, params.season_id
         )
         if not opponent_strengths:
             return None

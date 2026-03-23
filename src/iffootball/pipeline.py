@@ -345,7 +345,7 @@ def initialize(
         db.save_manager_agent(manager_agent)
         db.save_fixture_list(fixture_list, competition_id, season_id)
         db.save_opponent_strengths(
-            opponent_strengths, competition_id, season_id, trigger_week,
+            opponent_strengths, competition_id, season_id,
         )
         db.save_league_context(league_context)
 
