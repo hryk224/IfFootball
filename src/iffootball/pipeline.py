@@ -524,7 +524,7 @@ def initialize_season(
             competition_id,
             season_id,
         )
-        # Resolve baseline manager for cultural_inertia
+        # Resolve baseline manager for cultural_inertia and persistence.
         start_mgr = _resolve_season_start_manager(all_matches, team)
         if start_mgr is not None:
             from iffootball.converters.manager_stats import (
@@ -535,6 +535,12 @@ def initialize_season(
                 baseline,
                 cultural_inertia=calc_cultural_inertia(len(tenure_ids)),
             )
+            # Persist season-start manager for runtime resolution.
+            db._conn.execute(
+                "INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)",
+                (f"season_start_manager:{team}", start_mgr),
+            )
+            db._conn.commit()
         db.save_team_baseline(baseline)
 
     # -- 4. All managers (candidate master) --
