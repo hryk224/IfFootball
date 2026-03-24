@@ -21,10 +21,12 @@ venv/
 *.sqlite3
 db/
 
-# Data directory (gitignored by default, except demo cache)
+# Data directory (gitignored by default, except cache DBs)
 data/*
 !data/demo_cache/
 !data/demo_cache/*.db
+!data/season_cache/
+!data/season_cache/*.db
 
 # Streamlit
 .streamlit/secrets.toml

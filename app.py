@@ -68,10 +68,7 @@ def _open_season_db() -> Database | None:
     path = _season_cache_path()
     if not path.exists():
         return None
-    try:
-        return Database(path)
-    except Exception:
-        return None
+    return Database(path)
 
 
 def _load_team_list(db: Database) -> list[str]:
